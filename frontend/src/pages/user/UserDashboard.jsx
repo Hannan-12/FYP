@@ -2,25 +2,39 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
-import { Code, TrendingUp, Clock, CheckCircle } from "lucide-react";
+import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon } from "lucide-react";
+import { motion } from "framer-motion";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+
+// Reusable Stat Card
+const StatCard = ({ title, value, icon: Icon, color, delay }) => (
+  <motion.div 
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.5, delay: delay }}
+    className="bg-slate-800/50 backdrop-blur-xl border border-slate-700 p-6 rounded-2xl shadow-xl hover:shadow-2xl hover:border-indigo-500/30 transition-all duration-300 group"
+  >
+    <div className="flex justify-between items-start">
+      <div>
+        <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
+        <h3 className="text-3xl font-bold text-white tracking-tight">{value}</h3>
+      </div>
+      <div className={`p-3 rounded-xl ${color} bg-opacity-10 group-hover:scale-110 transition-transform duration-300`}>
+        <Icon size={24} className={color.replace('bg-', 'text-')} />
+      </div>
+    </div>
+  </motion.div>
+);
 
 const UserDashboard = () => {
-  const { user } = useAuth(); // Get currently logged in student
+  const { user } = useAuth();
   const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  // Stats state
-  const [stats, setStats] = useState({
-    totalSessions: 0,
-    avgAccuracy: 0,
-    latestSkill: "N/A"
-  });
+  const [stats, setStats] = useState({ total: 0, accuracy: 0, skill: "N/A" });
+  const [chartData, setChartData] = useState([]);
 
   useEffect(() => {
     if (!user) return;
 
-    // 🔍 FILTER: Only get sessions for THIS user
-    // Note: We are using email for now to match the Python simulator
     const q = query(
       collection(db, "sessions"),
       where("email", "==", user.email), 
@@ -31,95 +45,153 @@ const UserDashboard = () => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSessions(data);
 
-      // Calc simple stats
       if (data.length > 0) {
-        const latest = data[0].stats.skillLevel;
-        // Mock accuracy calculation based on AI prob (inverse for demo)
+        // 1. Calculate Stats
         const avgAcc = 100 - (data.reduce((acc, curr) => acc + curr.stats.aiProbability, 0) / data.length);
-        
         setStats({
-          totalSessions: data.length,
-          avgAccuracy: Math.round(avgAcc),
-          latestSkill: latest
+          total: data.length,
+          accuracy: Math.round(avgAcc),
+          skill: data[0].stats.skillLevel // Latest session skill
         });
-      }
 
-      setLoading(false);
+        // 2. Prepare Chart Data
+        const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
+        data.forEach(s => {
+          const level = s.stats?.skillLevel || "Beginner";
+          if (skills[level] !== undefined) skills[level]++;
+        });
+
+        const formattedData = [
+          { name: "Beginner", value: skills.Beginner },
+          { name: "Intermediate", value: skills.Intermediate },
+          { name: "Advanced", value: skills.Advanced }
+        ].filter(item => item.value > 0); // Only show existing skills
+
+        setChartData(formattedData);
+      }
     });
 
     return () => unsubscribe();
   }, [user]);
 
+  const COLORS = ["#94a3b8", "#3b82f6", "#10b981"]; // Slate, Blue, Emerald
+
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Welcome back, Student!</h1>
-
-      {/* Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-indigo-500">
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-gray-500 text-sm">Total Sessions</p>
-              <h3 className="text-3xl font-bold">{stats.totalSessions}</h3>
-            </div>
-            <Code className="text-indigo-500" size={28} />
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-green-500">
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-gray-500 text-sm">Code Authenticity</p>
-              <h3 className="text-3xl font-bold">{stats.avgAccuracy}%</h3>
-            </div>
-            <CheckCircle className="text-green-500" size={28} />
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-purple-500">
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-gray-500 text-sm">Current Skill Level</p>
-              <h3 className="text-3xl font-bold">{stats.latestSkill}</h3>
-            </div>
-            <TrendingUp className="text-purple-500" size={28} />
-          </div>
+    <div className="space-y-8">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold text-white">Dashboard</h1>
+          <p className="text-slate-400 mt-2">Welcome back, here is your performance overview.</p>
         </div>
       </div>
 
-      {/* Personal History */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-6 border-b border-gray-100">
-          <h2 className="text-lg font-bold text-gray-800">My Recent Activity</h2>
-        </div>
+      {/* Top Stats Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatCard title="Total Sessions" value={stats.total} icon={Code} color="bg-blue-500" text="text-blue-500" delay={0.1} />
+        <StatCard title="Authenticity Score" value={`${stats.accuracy}%`} icon={CheckCircle} color="bg-green-500" text="text-green-500" delay={0.2} />
+        <StatCard title="Current Level" value={stats.skill} icon={TrendingUp} color="bg-purple-500" text="text-purple-500" delay={0.3} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {loading ? (
-          <div className="p-8 text-center text-gray-500">Loading your data...</div>
-        ) : sessions.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">You haven't coded anything yet.</div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {sessions.map((session) => (
-              <div key={session.id} className="p-4 hover:bg-gray-50 flex justify-between items-center">
-                <div>
-                  <p className="font-bold text-gray-800 capitalize">{session.language} Practice</p>
-                  <p className="text-sm text-gray-500 flex items-center mt-1">
-                    <Clock size={12} className="mr-1"/>
-                    {session.timestamp ? new Date(session.timestamp.seconds * 1000).toLocaleString() : "Just now"}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold">
+        {/* Left Column: Recent Activity (2/3 width) */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="lg:col-span-2 bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl overflow-hidden shadow-xl flex flex-col"
+        >
+          <div className="p-6 border-b border-slate-700">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Activity size={20} className="text-indigo-400" />
+              Recent Activity
+            </h2>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto max-h-[400px] divide-y divide-slate-700/50">
+            {sessions.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">No activity recorded yet. Start coding!</div>
+            ) : (
+              sessions.map((session, index) => (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: index * 0.05 }}
+                  key={session.id} 
+                  className="p-4 hover:bg-slate-700/30 transition-colors flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
+                      <Code size={18} />
+                    </div>
+                    <div>
+                      <p className="font-medium text-slate-200 capitalize">{session.language} Practice</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {session.timestamp ? new Date(session.timestamp.seconds * 1000).toLocaleString() : "Just now"}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                    session.stats.skillLevel === 'Advanced' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                    session.stats.skillLevel === 'Beginner' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' : 
+                    'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                  }`}>
                     {session.stats.skillLevel}
                   </span>
-                  <p className="text-xs text-gray-400 mt-1">
-                    AI Score: {session.stats.aiProbability.toFixed(1)}%
-                  </p>
-                </div>
-              </div>
-            ))}
+                </motion.div>
+              ))
+            )}
           </div>
-        )}
+        </motion.div>
+
+        {/* Right Column: Skill Analytics Chart (1/3 width) */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="lg:col-span-1 bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl shadow-xl flex flex-col"
+        >
+          <div className="p-6 border-b border-slate-700">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <PieIcon size={20} className="text-purple-400" />
+              Skill Breakdown
+            </h2>
+          </div>
+
+          <div className="p-4 flex-1 flex items-center justify-center min-h-[300px]">
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }}
+                    itemStyle={{ color: '#fff' }}
+                  />
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-slate-500">
+                <p>No data to analyze yet.</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+
       </div>
     </div>
   );

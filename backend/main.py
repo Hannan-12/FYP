@@ -7,7 +7,6 @@ import os
 import joblib 
 import numpy as np
 
-# --- 1. Initialize Firebase ---
 cred_path = "firebase_config/serviceAccountKey.json"
 
 if not os.path.exists(cred_path):
@@ -24,18 +23,15 @@ app = FastAPI()
 # --- 2. Load the AI Brain ---
 ai_model = None
 try:
-    # We load the model you trained earlier
     ai_model = joblib.load("ai_models/skill_classifier.pkl")
     print("🧠 AI Model Loaded Successfully")
 except Exception as e:
-    # Try looking in the root folder just in case
     try:
         ai_model = joblib.load("skill_classifier.pkl")
         print("🧠 AI Model Loaded Successfully (from root)")
     except:
         print(f"⚠️ Warning: AI Model not found. ({e})")
 
-# --- 3. Data Model ---
 class CodeSession(BaseModel):
     userId: str
     email: str

@@ -1,6 +1,7 @@
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { LayoutDashboard, Users, FileText, LogOut, Activity } from "lucide-react";
+import { LayoutDashboard, Users, Activity, LogOut, ShieldCheck } from "lucide-react";
+import { motion } from "framer-motion";
 
 const AdminLayout = () => {
   const { logout } = useAuth();
@@ -12,48 +13,71 @@ const AdminLayout = () => {
     navigate("/login");
   };
 
-  const isActive = (path) => location.pathname === path ? "bg-blue-700" : "";
+  const NavItem = ({ to, icon: Icon, label }) => {
+    const active = location.pathname === to;
+    return (
+      <Link to={to} className="relative flex items-center p-3 my-2 rounded-xl group/item overflow-hidden">
+        {active && (
+          <motion.div
+            layoutId="activeAdminTab"
+            className="absolute inset-0 bg-blue-500/20 rounded-xl border border-blue-500/30"
+            initial={false}
+            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+          />
+        )}
+        <div className={`flex items-center transition-colors z-10 ${active ? 'text-blue-100' : 'text-slate-400 group-hover/item:text-white'}`}>
+          <Icon size={24} className={`min-w-[24px] ${active ? "text-blue-400" : ""}`} />
+          <span className="ml-4 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-[-10px] group-hover:translate-x-0">
+            {label}
+          </span>
+        </div>
+      </Link>
+    );
+  };
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Sidebar */}
-      <aside className="w-64 bg-blue-900 text-white flex flex-col">
-        <div className="p-6 text-2xl font-bold border-b border-blue-800">
-          DevSkill Admin
+    <div className="flex h-screen bg-[#0b1121] text-slate-100 overflow-hidden font-sans">
+      {/* SIDEBAR: 
+         - Width: w-20 -> w-64 on hover
+      */}
+      <aside className="h-screen bg-slate-900/50 border-r border-slate-800 flex flex-col backdrop-blur-xl relative z-20 transition-all duration-300 ease-in-out w-20 hover:w-64 group">
+        
+        {/* Header */}
+        <div className="p-6 flex items-center overflow-hidden">
+          <div className="w-8 h-8 min-w-[32px] bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/30">
+            <ShieldCheck size={18} className="text-white" />
+          </div>
+          <h2 className="text-xl font-bold tracking-tight text-white ml-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
+            AdminPanel
+          </h2>
         </div>
         
-        <nav className="flex-1 p-4 space-y-2">
-          <Link to="/admin/dashboard" className={`flex items-center space-x-3 p-3 rounded hover:bg-blue-800 transition ${isActive('/admin/dashboard')}`}>
-            <LayoutDashboard size={20} />
-            <span>Dashboard</span>
-          </Link>
-          
-          <Link to="/admin/students" className={`flex items-center space-x-3 p-3 rounded hover:bg-blue-800 transition ${isActive('/admin/students')}`}>
-            <Users size={20} />
-            <span>Students</span>
-          </Link>
-
-          <Link to="/admin/analytics" className={`flex items-center space-x-3 p-3 rounded hover:bg-blue-800 transition ${isActive('/admin/analytics')}`}>
-            <Activity size={20} />
-            <span>Analytics</span>
-          </Link>
+        {/* Nav */}
+        <nav className="flex-1 px-3">
+          <NavItem to="/admin/dashboard" icon={LayoutDashboard} label="Dashboard" />
+          <NavItem to="/admin/students" icon={Users} label="Students" />
+          <NavItem to="/admin/analytics" icon={Activity} label="Analytics" />
         </nav>
 
-        <div className="p-4 border-t border-blue-800">
+        {/* Logout */}
+        <div className="p-3 border-t border-slate-800">
           <button 
             onClick={handleLogout}
-            className="flex items-center space-x-3 p-3 w-full rounded hover:bg-red-600 transition text-red-100"
+            className="flex items-center p-3 w-full rounded-xl text-red-400 hover:bg-red-500/10 transition duration-200 overflow-hidden"
           >
-            <LogOut size={20} />
-            <span>Logout</span>
+            <LogOut size={24} className="min-w-[24px]" />
+            <span className="ml-4 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              Sign Out
+            </span>
           </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8">
-          <Outlet /> {/* This is where the dashboard content will appear */}
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto relative">
+        <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-900/10 to-transparent pointer-events-none" />
+        <div className="p-8 relative z-10 max-w-7xl mx-auto">
+           <Outlet />
         </div>
       </main>
     </div>

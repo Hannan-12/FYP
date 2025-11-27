@@ -1,130 +1,92 @@
 import { useEffect, useState } from "react";
 import { db } from "../../firebase/config";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend 
-} from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { motion } from "framer-motion";
 
 const Analytics = () => {
+  const [data, setData] = useState({ skill: [], activity: [] });
   const [loading, setLoading] = useState(true);
-  const [skillData, setSkillData] = useState([]);
-  const [activityData, setActivityData] = useState([]);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
-      try {
-        const q = query(collection(db, "sessions"), orderBy("timestamp", "asc"));
-        const snapshot = await getDocs(q);
-        const sessions = snapshot.docs.map(doc => doc.data());
+      const q = query(collection(db, "sessions"), orderBy("timestamp", "asc"));
+      const snapshot = await getDocs(q);
+      const sessions = snapshot.docs.map(doc => doc.data());
 
-        // --- 1. Process Data for Pie Chart (Skill Level) ---
-        const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
-        
-        sessions.forEach(s => {
-          // SAFETY CHECK: Use ?. to avoid crashes if 'stats' is missing
-          const level = s.stats?.skillLevel || "Beginner"; 
-          if (skills[level] !== undefined) skills[level]++;
-        });
+      const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
+      const timeline = {};
+      
+      sessions.forEach(s => {
+        const level = s.stats?.skillLevel || "Beginner";
+        if (skills[level] !== undefined) skills[level]++;
+        const date = new Date(s.timestamp.seconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        timeline[date] = (timeline[date] || 0) + 1;
+      });
 
-        const pieData = [
-          { name: "Beginner", value: skills.Beginner },
-          { name: "Intermediate", value: skills.Intermediate },
-          { name: "Advanced", value: skills.Advanced }
-        ];
-
-        // --- 2. Process Data for Bar Chart (Sessions per Date) ---
-        const timeline = {};
-        sessions.forEach(s => {
-          if (s.timestamp) {
-            const date = new Date(s.timestamp.seconds * 1000).toLocaleDateString();
-            timeline[date] = (timeline[date] || 0) + 1;
-          }
-        });
-
-        const barData = Object.keys(timeline).map(date => ({
-          date: date,
-          sessions: timeline[date]
-        }));
-
-        setSkillData(pieData);
-        setActivityData(barData);
-      } catch (err) {
-        console.error("Error fetching analytics:", err);
-        setError("Failed to load analytics data. Check console for details.");
-      } finally {
-        setLoading(false);
-      }
+      setData({
+        skill: Object.keys(skills).map(k => ({ name: k, value: skills[k] })),
+        activity: Object.keys(timeline).map(d => ({ date: d, sessions: timeline[d] }))
+      });
+      setLoading(false);
     };
-
     fetchData();
   }, []);
 
-  const COLORS = ["#9CA3AF", "#3B82F6", "#10B981"]; // Gray, Blue, Green
-
-  if (loading) return <div className="p-10 text-center text-gray-500">Loading Analytics...</div>;
-  if (error) return <div className="p-10 text-center text-red-500">{error}</div>;
+  const COLORS = ["#94a3b8", "#3b82f6", "#10b981"]; // Slate, Blue, Emerald
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">System Analytics</h1>
+    <div className="space-y-8">
+      <h1 className="text-3xl font-bold text-white">Analytics Overview</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* Chart 1: Skill Distribution */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h2 className="text-lg font-bold text-gray-700 mb-4">Student Skill Distribution</h2>
-          <div className="h-64">
+        {/* Chart 1 */}
+        <motion.div 
+           initial={{ opacity: 0, scale: 0.95 }}
+           animate={{ opacity: 1, scale: 1 }}
+           className="bg-slate-800/40 backdrop-blur-md border border-slate-700 p-6 rounded-2xl shadow-xl"
+        >
+          <h2 className="text-lg font-bold text-slate-200 mb-6">Skill Distribution</h2>
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={skillData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
+                <Pie 
+                  data={data.skill} 
+                  cx="50%" cy="50%" 
+                  innerRadius={60} outerRadius={80} 
+                  paddingAngle={5} 
                   dataKey="value"
+                  stroke="none"
                 >
-                  {skillData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
+                  {data.skill.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                 </Pie>
-                <Tooltip />
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </motion.div>
 
-        {/* Chart 2: Daily Activity */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h2 className="text-lg font-bold text-gray-700 mb-4">Daily Coding Sessions</h2>
-          <div className="h-64">
+        {/* Chart 2 */}
+        <motion.div 
+           initial={{ opacity: 0, scale: 0.95 }}
+           animate={{ opacity: 1, scale: 1 }}
+           transition={{ delay: 0.1 }}
+           className="bg-slate-800/40 backdrop-blur-md border border-slate-700 p-6 rounded-2xl shadow-xl"
+        >
+          <h2 className="text-lg font-bold text-slate-200 mb-6">Daily Activity</h2>
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={activityData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="sessions" fill="#6366F1" radius={[4, 4, 0, 0]} />
+              <BarChart data={data.activity}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} />
+                <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip cursor={{fill: '#334155', opacity: 0.4}} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                <Bar dataKey="sessions" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={30} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
-
-      </div>
-
-      {/* Summary Box */}
-      <div className="mt-8 bg-indigo-900 text-white p-6 rounded-lg shadow-lg">
-        <h3 className="text-xl font-bold">AI Insight</h3>
-        <p className="mt-2 text-indigo-200">
-          Total Sessions Analyzed: <span className="font-bold text-white">{skillData.reduce((a, b) => a + b.value, 0)}</span>.
-          Most students are performing at the <span className="font-bold text-white">
-            {skillData.length > 0 ? skillData.reduce((prev, current) => (prev.value > current.value) ? prev : current).name : "N/A"}
-          </span> level.
-        </p>
+        </motion.div>
       </div>
     </div>
   );

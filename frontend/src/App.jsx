@@ -4,6 +4,7 @@ import { AuthProvider } from "./context/AuthContext";
 // Auth Pages
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
+import ForgotPassword from "./pages/auth/ForgotPassword"; // <--- Import here
 
 // Admin Components
 import AdminLayout from "./layouts/AdminLayout";
@@ -15,6 +16,7 @@ import Analytics from "./pages/admin/Analytics";
 // User Components
 import UserLayout from "./layouts/UserLayout";
 import UserDashboard from "./pages/user/UserDashboard";
+import UserProfile from "./pages/user/UserProfile"; 
 
 function App() {
   return (
@@ -24,36 +26,24 @@ function App() {
           {/* --- Public Routes --- */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} /> {/* <--- Add Route */}
           
           {/* --- Admin Panel (Protected) --- */}
           <Route path="/admin" element={<AdminLayout />}>
-            {/* Main Dashboard */}
             <Route path="dashboard" element={<AdminDashboard />} />
-            
-            {/* Student Directory */}
             <Route path="students" element={<StudentList />} />
-            
-            {/* Session Detail View (Drill-Down) */}
             <Route path="session/:id" element={<SessionDetail />} />
-            
-            {/* Analytics Module */}
             <Route path="analytics" element={<Analytics />} /> 
           </Route>
 
           {/* --- User/Student Panel (Private) --- */}
           <Route path="/user" element={<UserLayout />}>
-            {/* Student Dashboard */}
             <Route path="dashboard" element={<UserDashboard />} />
-            
-            {/* History Placeholder */}
-            <Route path="history" element={<div className="p-8">Session History (Coming Soon)</div>} />
-            
-            {/* Profile Placeholder */}
-            <Route path="profile" element={<div className="p-8">My Profile (Coming Soon)</div>} />
+            <Route path="history" element={<div className="p-8 text-white">Session History (Coming Soon)</div>} />
+            <Route path="profile" element={<UserProfile />} />
           </Route>
 
           {/* --- Default Redirect --- */}
-          {/* Any unknown URL redirects to Login */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </AuthProvider>
