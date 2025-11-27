@@ -1,137 +1,134 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom"; // <--- Added for navigation
+import { useNavigate } from "react-router-dom";
 import { db } from "../../firebase/config";
 import { collection, onSnapshot, query, orderBy, limit } from "firebase/firestore";
-import { Users, Code, Brain, AlertTriangle, Clock } from "lucide-react";
+import { Users, Code, Brain, AlertTriangle, ChevronRight } from "lucide-react";
+import { motion } from "framer-motion";
 
-// 1. Reusable Card Component
-const StatCard = ({ title, value, icon: Icon, color }) => (
-  <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 flex items-center justify-between">
-    <div>
-      <p className="text-gray-500 text-sm font-medium">{title}</p>
-      <h3 className="text-3xl font-bold text-gray-800 mt-1">{value}</h3>
+const StatCard = ({ title, value, icon: Icon, color, delay }) => (
+  <motion.div 
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.5, delay: delay }}
+    className="bg-slate-800/40 backdrop-blur-md border border-slate-700 p-6 rounded-2xl shadow-lg hover:border-blue-500/30 transition-all group"
+  >
+    <div className="flex justify-between items-start">
+      <div>
+        <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
+        <h3 className="text-3xl font-bold text-white tracking-tight">{value}</h3>
+      </div>
+      <div className={`p-3 rounded-xl ${color} bg-opacity-10`}>
+        <Icon size={24} className={color.replace('bg-', 'text-')} />
+      </div>
     </div>
-    <div className={`p-4 rounded-full ${color}`}>
-      <Icon size={24} className="text-white" />
-    </div>
-  </div>
+  </motion.div>
 );
 
 const AdminDashboard = () => {
-  const navigate = useNavigate(); // <--- Initialize navigation
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    totalStudents: 0,
-    totalSessions: 0,
-    aiDetections: 0,
-    criticalFlags: 0
-  });
+  const [stats, setStats] = useState({ totalStudents: 0, totalSessions: 0, aiDetections: 0, criticalFlags: 0 });
 
-  // 2. Real-time Listener
   useEffect(() => {
-    const q = query(
-      collection(db, "sessions"), 
-      orderBy("timestamp", "desc"), 
-      limit(20)
-    );
-
+    const q = query(collection(db, "sessions"), orderBy("timestamp", "desc"), limit(20));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const sessionData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
+      const sessionData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSessions(sessionData);
-
-      // Calculate Stats on the fly
-      const total = sessionData.length;
+      
       const aiCount = sessionData.filter(s => s.stats.aiProbability > 50).length;
       const flags = sessionData.filter(s => s.stats.aiProbability > 80).length;
 
       setStats({
-        totalStudents: 12, // Placeholder until we link Users collection count
-        totalSessions: total,
+        totalStudents: 12, 
+        totalSessions: sessionData.length,
         aiDetections: aiCount,
         criticalFlags: flags
       });
-      
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, []);
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Live Overview</h1>
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold text-white">Live Overview</h1>
+        <p className="text-slate-400 mt-2">Real-time monitoring of student activities.</p>
+      </div>
       
-      {/* Top Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard title="Total Students" value={stats.totalStudents} icon={Users} color="bg-blue-500" />
-        <StatCard title="Total Sessions" value={stats.totalSessions} icon={Code} color="bg-green-500" />
-        <StatCard title="High AI Prob > 50%" value={stats.aiDetections} icon={Brain} color="bg-purple-500" />
-        <StatCard title="Critical > 80%" value={stats.criticalFlags} icon={AlertTriangle} color="bg-red-500" />
+      {/* Stats Row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard title="Total Students" value={stats.totalStudents} icon={Users} color="bg-blue-500" delay={0.1} />
+        <StatCard title="Total Sessions" value={stats.totalSessions} icon={Code} color="bg-emerald-500" delay={0.2} />
+        <StatCard title="High AI Prob > 50%" value={stats.aiDetections} icon={Brain} color="bg-purple-500" delay={0.3} />
+        <StatCard title="Critical > 80%" value={stats.criticalFlags} icon={AlertTriangle} color="bg-red-500" delay={0.4} />
       </div>
 
-      {/* Recent Activity List */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-100">
-          <h2 className="text-lg font-bold text-gray-800">Recent Coding Sessions</h2>
+      {/* Recent Activity Table */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="bg-slate-800/40 backdrop-blur-md border border-slate-700 rounded-2xl overflow-hidden shadow-xl"
+      >
+        <div className="p-6 border-b border-slate-700">
+          <h2 className="text-lg font-bold text-white">Recent Coding Sessions</h2>
         </div>
         
         {loading ? (
-          <div className="p-10 text-center text-gray-500">Connecting to Firestore...</div>
+          <div className="p-10 text-center text-slate-500">Loading live data...</div>
         ) : sessions.length === 0 ? (
-          <div className="p-10 text-center text-gray-500">No sessions found. Run the Python simulator!</div>
+          <div className="p-10 text-center text-slate-500">No active sessions found.</div>
         ) : (
           <table className="w-full text-left">
-            <thead className="bg-gray-50 text-gray-600 text-sm uppercase">
+            <thead className="bg-slate-900/50 text-slate-400 text-sm uppercase font-medium">
               <tr>
-                <th className="p-4">User</th>
+                <th className="p-4 pl-6">User</th>
                 <th className="p-4">Skill Level</th>
                 <th className="p-4">AI Probability</th>
                 <th className="p-4">Language</th>
-                <th className="p-4">Time</th>
+                <th className="p-4 text-right pr-6">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-700/50">
               {sessions.map((session) => (
                 <tr 
                   key={session.id} 
-                  onClick={() => navigate(`/admin/session/${session.id}`)} // <--- CLICK HANDLER ADDED
-                  className="hover:bg-blue-50 transition cursor-pointer"   // <--- VISUAL CUES ADDED
+                  onClick={() => navigate(`/admin/session/${session.id}`)}
+                  className="hover:bg-slate-700/30 transition cursor-pointer group"
                 >
-                  <td className="p-4 font-medium text-gray-800">{session.email}</td>
+                  <td className="p-4 pl-6 font-medium text-slate-200">{session.email}</td>
                   <td className="p-4">
-                    <span className={`px-2 py-1 rounded text-xs font-bold 
-                      ${session.stats.skillLevel === 'Advanced' ? 'bg-green-100 text-green-700' : 
-                        session.stats.skillLevel === 'Beginner' ? 'bg-gray-100 text-gray-700' : 'bg-blue-100 text-blue-700'}`}>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                      session.stats.skillLevel === 'Advanced' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                      session.stats.skillLevel === 'Beginner' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' : 
+                      'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                    }`}>
                       {session.stats.skillLevel}
                     </span>
                   </td>
                   <td className="p-4">
-                    <div className="flex items-center">
-                      <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-24 bg-slate-700 rounded-full h-1.5 overflow-hidden">
                         <div 
-                          className={`h-2 rounded-full ${session.stats.aiProbability > 50 ? 'bg-red-500' : 'bg-green-500'}`} 
+                          className={`h-full rounded-full ${session.stats.aiProbability > 50 ? 'bg-red-500' : 'bg-emerald-500'}`} 
                           style={{ width: `${Math.min(session.stats.aiProbability, 100)}%` }}
-                        ></div>
+                        />
                       </div>
-                      <span className="text-sm text-gray-600">{session.stats.aiProbability.toFixed(1)}%</span>
+                      <span className="text-sm text-slate-400">{session.stats.aiProbability.toFixed(0)}%</span>
                     </div>
                   </td>
-                  <td className="p-4 text-gray-600 capitalize">{session.language}</td>
-                  <td className="p-4 text-gray-400 text-sm flex items-center">
-                    <Clock size={14} className="mr-1"/>
-                    {session.timestamp ? new Date(session.timestamp.seconds * 1000).toLocaleTimeString() : "Just now"}
+                  <td className="p-4 text-slate-400 capitalize">{session.language}</td>
+                  <td className="p-4 text-right pr-6">
+                    <ChevronRight size={18} className="ml-auto text-slate-600 group-hover:text-blue-400 transition-colors" />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 };
