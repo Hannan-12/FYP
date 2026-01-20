@@ -3,6 +3,7 @@ import random
 import time
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 import os
 
 # --- 1. Setup Firebase ---
@@ -21,7 +22,7 @@ db = firestore.client()
 print("🔍 Fetching real students from Firestore...")
 
 # Get all users who are registered as 'student'
-students_ref = db.collection("users").where("role", "==", "student").stream()
+students_ref = db.collection("users").where(filter=FieldFilter("role", "==", "student")).stream()
 
 # Define who gets forced "Advanced" sessions
 TARGET_EMAILS = ["test@devskill.com", "student@devskill.com"]
