@@ -38,6 +38,15 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // User Profiles collection (XP, levels, badges, progression)
+    match /userProfiles/{userId} {
+      // Users can read and write their own profile
+      allow read, write: if isOwner(userId);
+
+      // Admins can read all profiles
+      allow read: if isAdmin();
+    }
+
     // Sessions collection (for tracking user sessions/progress)
     match /sessions/{sessionId} {
       // Users can read their own sessions
