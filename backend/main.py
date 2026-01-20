@@ -90,6 +90,28 @@ class CodeSession(BaseModel):
 
 # --- API Endpoints ---
 
+@app.get("/get-user-id/{email}")
+async def get_user_id(email: str):
+    """Returns the userId (Firebase Auth UID) for a given email address."""
+    try:
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        users_ref = db.collection("users").where(filter=FieldFilter("email", "==", email)).stream()
+
+        for doc in users_ref:
+            return {
+                "status": "success",
+                "userId": doc.id,
+                "email": email
+            }
+
+        raise HTTPException(status_code=404, detail=f"User not found: {email}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error querying user: {str(e)}")
+
 @app.get("/get-quest/{skill_level}")
 async def get_quest(skill_level: str):
     """Returns a random challenge based on the detected skill level."""

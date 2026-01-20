@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Standalone Test Simulation for student@devskill.com
-This script generates test coding sessions without requiring Firestore access.
+This script generates test coding sessions by querying the backend for the real userId.
 """
 
 import requests
@@ -11,13 +11,12 @@ from datetime import datetime
 
 # --- Configuration ---
 BACKEND_URL = "http://127.0.0.1:8000/analyze"
+BACKEND_USER_LOOKUP_URL = "http://127.0.0.1:8000/get-user-id"
+TARGET_EMAIL = "student@devskill.com"
+TARGET_SKILL = "Advanced"  # Forcing Advanced level as per test_simulation.py
 
-# Target student information
-TARGET_STUDENT = {
-    "userId": "student_devskill",  # Placeholder ID
-    "email": "student@devskill.com",
-    "skill": "Advanced"  # Forcing Advanced level as per test_simulation.py
-}
+# Target student information (will be populated from backend)
+TARGET_STUDENT = None
 
 # Code snippets by skill level (from original test_simulation.py)
 CODE_SNIPPETS = {
@@ -45,6 +44,39 @@ CODE_SNIPPETS = {
     ]
 }
 
+def fetch_student_user_id(email):
+    """Fetch the real userId (Firebase Auth UID) for the given email via backend API."""
+    print(f"🔍 Searching for user: {email}")
+
+    try:
+        response = requests.get(f"{BACKEND_USER_LOOKUP_URL}/{email}", timeout=5)
+
+        if response.status_code == 200:
+            result = response.json()
+            user_id = result.get("userId")
+            print(f"✅ Found user: {email}")
+            print(f"   → userId: {user_id}")
+            return user_id
+        elif response.status_code == 404:
+            print(f"❌ User not found: {email}")
+            print("\n💡 Make sure the user is registered in your system.")
+            print("   You can register at: http://localhost:3000/signup")
+            return None
+        else:
+            print(f"❌ Backend returned error: {response.status_code}")
+            print(f"   → {response.text}")
+            return None
+
+    except requests.exceptions.ConnectionError:
+        print(f"❌ Cannot connect to backend")
+        print("\n💡 Make sure the backend server is running:")
+        print("   cd /home/user/FYP/backend")
+        print("   python3 main.py")
+        return None
+    except Exception as e:
+        print(f"❌ Error querying backend: {e}")
+        return None
+
 def generate_session(student, skill_level, session_num):
     """Generate a single test session for the student."""
     code_text = random.choice(CODE_SNIPPETS.get(skill_level, CODE_SNIPPETS["Beginner"]))
@@ -67,9 +99,27 @@ def generate_session(student, skill_level, session_num):
 
 def run_simulation(num_sessions=2):
     """Run the simulation for student@devskill.com."""
+    global TARGET_STUDENT
+
     print("=" * 60)
     print("🎯 Test Simulation for student@devskill.com")
     print("=" * 60)
+    print()
+
+    # Fetch real userId from Firestore
+    user_id = fetch_student_user_id(TARGET_EMAIL)
+
+    if not user_id:
+        print("\n❌ Cannot proceed without valid userId")
+        return False
+
+    # Populate TARGET_STUDENT with real data
+    TARGET_STUDENT = {
+        "userId": user_id,
+        "email": TARGET_EMAIL,
+        "skill": TARGET_SKILL
+    }
+
     print(f"\nTarget: {TARGET_STUDENT['email']}")
     print(f"Skill Level: {TARGET_STUDENT['skill']}")
     print(f"Sessions to Generate: {num_sessions}")
