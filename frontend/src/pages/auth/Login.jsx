@@ -1,8 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "../../firebase/config";
 import { motion } from "framer-motion";
 import { ArrowRight, Loader2 } from "lucide-react";
 
@@ -11,28 +9,40 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const { login } = useAuth();
+  const { login, user, userRole } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user && userRole) {
+      if (userRole === "admin") {
+        navigate("/admin/dashboard", { replace: true });
+      } else {
+        navigate("/user/dashboard", { replace: true });
+      }
+    }
+  }, [user, userRole, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+
     try {
       // Trim email and password to prevent whitespace issues
       const trimmedEmail = email.trim();
       const trimmedPassword = password.trim();
 
-      const userCredential = await login(trimmedEmail, trimmedPassword);
-      const user = userCredential.user;
-      const docRef = doc(db, "users", user.uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists() && docSnap.data().role === "admin") {
-        navigate("/admin/dashboard");
-      } else {
-        navigate("/user/dashboard");
-      }
+      console.log("Attempting login...");
+      await login(trimmedEmail, trimmedPassword);
+      console.log("Login successful!");
+
+      // Note: Navigation will be handled by the useEffect hook above
+      // once AuthContext loads the user and role
     } catch (err) {
+      console.error("Login error:", err);
+      setLoading(false);
+
       // Provide more helpful error messages based on error code
       if (err.code === "auth/user-not-found") {
         setError("No account found with this email address.");
@@ -45,10 +55,9 @@ const Login = () => {
       } else if (err.code === "auth/invalid-credential") {
         setError("Invalid credentials. Please check your email and password.");
       } else {
-        setError("Failed to log in. Please try again.");
+        setError(`Failed to log in: ${err.message || "Please try again."}`);
       }
     }
-    setLoading(false);
   };
 
   return (
