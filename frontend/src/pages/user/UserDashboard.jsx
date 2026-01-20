@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom"; // Added navigate
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
-import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon } from "lucide-react";
+import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 
-// Reusable Stat Card
 const StatCard = ({ title, value, icon: Icon, color, delay }) => (
   <motion.div 
     initial={{ opacity: 0, y: 20 }}
@@ -28,6 +28,7 @@ const StatCard = ({ title, value, icon: Icon, color, delay }) => (
 
 const UserDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [stats, setStats] = useState({ total: 0, accuracy: 0, skill: "N/A" });
   const [chartData, setChartData] = useState([]);
@@ -46,15 +47,13 @@ const UserDashboard = () => {
       setSessions(data);
 
       if (data.length > 0) {
-        // 1. Calculate Stats
         const avgAcc = 100 - (data.reduce((acc, curr) => acc + curr.stats.aiProbability, 0) / data.length);
         setStats({
           total: data.length,
           accuracy: Math.round(avgAcc),
-          skill: data[0].stats.skillLevel // Latest session skill
+          skill: data[0].stats.skillLevel
         });
 
-        // 2. Prepare Chart Data
         const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
         data.forEach(s => {
           const level = s.stats?.skillLevel || "Beginner";
@@ -65,7 +64,7 @@ const UserDashboard = () => {
           { name: "Beginner", value: skills.Beginner },
           { name: "Intermediate", value: skills.Intermediate },
           { name: "Advanced", value: skills.Advanced }
-        ].filter(item => item.value > 0); // Only show existing skills
+        ].filter(item => item.value > 0);
 
         setChartData(formattedData);
       }
@@ -74,32 +73,44 @@ const UserDashboard = () => {
     return () => unsubscribe();
   }, [user]);
 
-  const COLORS = ["#94a3b8", "#3b82f6", "#10b981"]; // Slate, Blue, Emerald
+  const COLORS = ["#94a3b8", "#3b82f6", "#10b981"];
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-          <p className="text-slate-400 mt-2">Welcome back, here is your performance overview.</p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold text-white">Dashboard</h1>
+        <p className="text-slate-400 mt-2">Welcome back, check your performance overview.</p>
       </div>
 
-      {/* Top Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatCard title="Total Sessions" value={stats.total} icon={Code} color="bg-blue-500" text="text-blue-500" delay={0.1} />
-        <StatCard title="Authenticity Score" value={`${stats.accuracy}%`} icon={CheckCircle} color="bg-green-500" text="text-green-500" delay={0.2} />
-        <StatCard title="Current Level" value={stats.skill} icon={TrendingUp} color="bg-purple-500" text="text-purple-500" delay={0.3} />
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <StatCard title="Total Sessions" value={stats.total} icon={Code} color="bg-blue-500" delay={0.1} />
+        <StatCard title="Authenticity" value={`${stats.accuracy}%`} icon={CheckCircle} color="bg-green-500" delay={0.2} />
+        <StatCard title="Current Level" value={stats.skill} icon={TrendingUp} color="bg-purple-500" delay={0.3} />
+        
+        {/* Gamified Level Up Card */}
+        <motion.div 
+          onClick={() => navigate("/user/quests")}
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.4 }}
+          className="cursor-pointer bg-gradient-to-br from-indigo-600 to-purple-700 p-6 rounded-2xl shadow-xl hover:scale-105 transition-transform flex flex-col justify-between group"
+        >
+          <div>
+            <p className="text-white/70 text-sm font-medium">Ready to grow?</p>
+            <h3 className="text-xl font-bold text-white">Unlock New Quests</h3>
+          </div>
+          <div className="flex justify-end">
+            <Zap className="text-yellow-400 group-hover:animate-pulse" size={24} />
+          </div>
+        </motion.div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Column: Recent Activity (2/3 width) */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="lg:col-span-2 bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl overflow-hidden shadow-xl flex flex-col"
+          transition={{ delay: 0.5 }}
+          className="lg:col-span-2 bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl overflow-hidden shadow-xl"
         >
           <div className="p-6 border-b border-slate-700">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -107,91 +118,43 @@ const UserDashboard = () => {
               Recent Activity
             </h2>
           </div>
-          
-          <div className="flex-1 overflow-y-auto max-h-[400px] divide-y divide-slate-700/50">
-            {sessions.length === 0 ? (
-              <div className="p-8 text-center text-slate-500">No activity recorded yet. Start coding!</div>
-            ) : (
-              sessions.map((session, index) => (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: index * 0.05 }}
-                  key={session.id} 
-                  className="p-4 hover:bg-slate-700/30 transition-colors flex items-center justify-between group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
-                      <Code size={18} />
-                    </div>
-                    <div>
-                      <p className="font-medium text-slate-200 capitalize">{session.language} Practice</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {session.timestamp ? new Date(session.timestamp.seconds * 1000).toLocaleString() : "Just now"}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                    session.stats.skillLevel === 'Advanced' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                    session.stats.skillLevel === 'Beginner' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' : 
-                    'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                  }`}>
-                    {session.stats.skillLevel}
-                  </span>
-                </motion.div>
-              ))
-            )}
+          <div className="divide-y divide-slate-700/50 max-h-[400px] overflow-y-auto">
+            {sessions.map((session) => (
+              <div key={session.id} className="p-4 hover:bg-slate-700/30 transition flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-slate-200 capitalize">{session.language} Practice</p>
+                  <p className="text-xs text-slate-500">
+                    {session.timestamp ? new Date(session.timestamp.seconds * 1000).toLocaleString() : "Just now"}
+                  </p>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                  {session.stats.skillLevel}
+                </span>
+              </div>
+            ))}
           </div>
         </motion.div>
 
-        {/* Right Column: Skill Analytics Chart (1/3 width) */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="lg:col-span-1 bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl shadow-xl flex flex-col"
+          transition={{ delay: 0.6 }}
+          className="bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl shadow-xl p-6"
         >
-          <div className="p-6 border-b border-slate-700">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <PieIcon size={20} className="text-purple-400" />
-              Skill Breakdown
-            </h2>
-          </div>
-
-          <div className="p-4 flex-1 flex items-center justify-center min-h-[300px]">
-            {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={chartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="text-center text-slate-500">
-                <p>No data to analyze yet.</p>
-              </div>
-            )}
-          </div>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+            <PieIcon size={20} className="text-purple-400" />
+            Skill Breakdown
+          </h2>
+          <ResponsiveContainer width="100%" height={250}>
+            <PieChart>
+              <Pie data={chartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+              </Pie>
+              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+              <Legend verticalAlign="bottom" height={36} />
+            </PieChart>
+          </ResponsiveContainer>
         </motion.div>
-
       </div>
     </div>
   );

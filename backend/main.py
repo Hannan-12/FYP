@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 import joblib 
 import numpy as np
+import random # Added for quest selection
 
 cred_path = "firebase_config/serviceAccountKey.json"
 
@@ -20,7 +21,7 @@ else:
 db = firestore.client()
 app = FastAPI()
 
-# --- 2. Load the AI Brain ---
+# --- AI Model Loading ---
 ai_model = None
 try:
     ai_model = joblib.load("ai_models/skill_classifier.pkl")
@@ -32,6 +33,22 @@ except Exception as e:
     except:
         print(f"⚠️ Warning: AI Model not found. ({e})")
 
+# --- Gamified Quests Data ---
+CHALLENGES = {
+    "Beginner": [
+        {"id": 1, "title": "Loop Logic", "task": "Print numbers 1 to 10 using a for loop.", "xp": 50},
+        {"id": 2, "title": "Variable Swap", "task": "Swap two variables without using a third one.", "xp": 40}
+    ],
+    "Intermediate": [
+        {"id": 3, "title": "List Comprehension", "task": "Convert a list of strings to uppercase using one line.", "xp": 100},
+        {"id": 4, "title": "Dictionary Merge", "task": "Merge two dictionaries and sum common keys.", "xp": 120}
+    ],
+    "Advanced": [
+        {"id": 5, "title": "Decorator Design", "task": "Write a decorator that logs the execution time of a function.", "xp": 200},
+        {"id": 6, "title": "Async Fetch", "task": "Implement a parallel data fetcher using asyncio.gather.", "xp": 250}
+    ]
+}
+
 class CodeSession(BaseModel):
     userId: str
     email: str
@@ -41,40 +58,38 @@ class CodeSession(BaseModel):
     duration: float
     keystrokes: int
 
-# --- 4. The Smart Endpoint ---
+# --- API Endpoints ---
+
+@app.get("/get-quest/{skill_level}")
+async def get_quest(skill_level: str):
+    """Returns a random challenge based on the detected skill level."""
+    quests = CHALLENGES.get(skill_level, CHALLENGES["Beginner"])
+    return random.choice(quests)
+
 @app.post("/analyze")
 async def analyze_code(session: CodeSession):
     try:
-        # Default values
         skill_level = "Beginner"
         confidence = 0.0
         
-        # --- A. PREDICT SKILL (Using Scikit-Learn) ---
         if ai_model:
-            # Predict the label (Beginner/Intermediate/Advanced)
             skill_level = ai_model.predict([session.code])[0]
-            
-            # Get the confidence score (probability)
             probs = ai_model.predict_proba([session.code])[0]
             confidence = float(max(probs) * 100)
         else:
-            # Fallback if model is missing: Use simple keyword check
             if "class " in session.code or "lambda" in session.code:
                 skill_level = "Advanced"
             elif "def " in session.code or "import " in session.code:
                 skill_level = "Intermediate"
 
-        # --- B. DETECT AI (Mock Logic for now) ---
-        # If code is written abnormally fast (> 5 keystrokes/sec), it's likely AI/Copied
-        cps = session.keystrokes / (session.duration + 1) # Characters per second
-        ai_probability = 12.5 # Base baseline
+        cps = session.keystrokes / (session.duration + 1)
+        ai_probability = 12.5
         
         if cps > 5.0: 
-            ai_probability = 85.0 # Too fast! Likely pasted.
+            ai_probability = 85.0
         elif cps > 3.0:
-            ai_probability = 45.0 # Fast typist or partial paste
+            ai_probability = 45.0
 
-        # --- C. SAVE TO FIRESTORE ---
         doc_data = {
             "userId": session.userId,
             "email": session.email,
@@ -84,10 +99,10 @@ async def analyze_code(session: CodeSession):
             "stats": {
                 "duration": session.duration,
                 "keystrokes": session.keystrokes,
-                "complexity": len(session.code.split()), # Simple word count
-                "skillLevel": skill_level,      # <--- Now uses AI!
+                "complexity": len(session.code.split()),
+                "skillLevel": skill_level,
                 "confidence": confidence,       
-                "aiProbability": ai_probability # <--- Dynamic based on speed
+                "aiProbability": ai_probability 
             }
         }
 
