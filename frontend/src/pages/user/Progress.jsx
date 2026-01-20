@@ -74,7 +74,7 @@ const Profile = () => {
         // Calculate stats from sessions
         const sessionsQuery = query(
           collection(db, "sessions"),
-          where("email", "==", user.email)
+          where("userId", "==", user.uid)
         );
         const sessionsSnap = await getDocs(sessionsQuery);
 

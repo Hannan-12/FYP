@@ -22,12 +22,12 @@ const Quests = () => {
   // Detect user's actual skill level from their session history
   useEffect(() => {
     const fetchUserSkillLevel = async () => {
-      if (!user?.email) return;
+      if (!user?.uid) return;
 
       try {
         const sessionsQuery = query(
           collection(db, "sessions"),
-          where("email", "==", user.email),
+          where("userId", "==", user.uid),
           orderBy("timestamp", "desc"),
           limit(5)
         );
