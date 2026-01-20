@@ -36,6 +36,7 @@ const Login = () => {
       console.log("Attempting login...");
       await login(trimmedEmail, trimmedPassword);
       console.log("Login successful!");
+      setLoading(false);
 
       // Note: Navigation will be handled by the useEffect hook above
       // once AuthContext loads the user and role
