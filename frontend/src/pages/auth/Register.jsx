@@ -20,11 +20,7 @@ const Register = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    // Trim email and password to prevent whitespace issues
-    const trimmedValue = (name === 'email' || name === 'password' || name === 'confirmPassword')
-      ? value.trim()
-      : value;
-    setFormData({ ...formData, [name]: trimmedValue });
+    setFormData({ ...formData, [name]: value });
   };
 
   const handleSubmit = async (e) => {
