@@ -55,11 +55,7 @@ const UserProfile = () => {
       await updateDoc(docRef, { name: name });
       setMessage("Profile updated successfully!");
       // Update local state immediately
-      setUserData(prev => ({ ...prev, name: name }));
-      
-      // Force a reload to update the sidebar name (Simple solution)
-      // Ideally, use a global Context for profile data to avoid reload
-      setTimeout(() => window.location.reload(), 1000); 
+      setUserData(prev => ({ ...prev, name: name })); 
       
     } catch (error) {
       console.error("Error updating profile:", error);
