@@ -16,27 +16,35 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setLoading(true);
-      
-      if (currentUser) {
-        // 1. User is logged in, now fetch their Role from Firestore
-        const docRef = doc(db, "users", currentUser.uid);
-        const docSnap = await getDoc(docRef);
+      try {
+        setLoading(true);
 
-        if (docSnap.exists()) {
-          setUserRole(docSnap.data().role);
+        if (currentUser) {
+          // 1. User is logged in, now fetch their Role from Firestore
+          const docRef = doc(db, "users", currentUser.uid);
+          const docSnap = await getDoc(docRef);
+
+          if (docSnap.exists()) {
+            setUserRole(docSnap.data().role);
+          } else {
+            // Fallback if no record exists (assume student)
+            setUserRole("student");
+          }
+          setUser(currentUser);
         } else {
-          // Fallback if no record exists (assume student)
-          setUserRole("student");
+          // User logged out
+          setUser(null);
+          setUserRole(null);
         }
-        setUser(currentUser);
-      } else {
-        // User logged out
+      } catch (error) {
+        console.error("Error in auth state change:", error);
+        // Set user to null on error to allow app to load
         setUser(null);
         setUserRole(null);
+      } finally {
+        // Always set loading to false, even if there's an error
+        setLoading(false);
       }
-      
-      setLoading(false);
     });
 
     return unsubscribe;
