@@ -19,7 +19,12 @@ const Register = () => {
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    // Trim email and password to prevent whitespace issues
+    const trimmedValue = (name === 'email' || name === 'password' || name === 'confirmPassword')
+      ? value.trim()
+      : value;
+    setFormData({ ...formData, [name]: trimmedValue });
   };
 
   const handleSubmit = async (e) => {
@@ -32,13 +37,18 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      // Trim all fields to ensure no whitespace issues
+      const trimmedEmail = formData.email.trim();
+      const trimmedPassword = formData.password.trim();
+      const trimmedName = formData.name.trim();
+
+      const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, trimmedPassword);
       const user = userCredential.user;
 
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
-        name: formData.name,
-        email: formData.email,
+        name: trimmedName,
+        email: trimmedEmail,
         role: "student",
         createdAt: serverTimestamp()
       });

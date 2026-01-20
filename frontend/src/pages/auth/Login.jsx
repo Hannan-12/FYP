@@ -17,8 +17,13 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError("");
     try {
-      const userCredential = await login(email, password);
+      // Trim email and password to prevent whitespace issues
+      const trimmedEmail = email.trim();
+      const trimmedPassword = password.trim();
+
+      const userCredential = await login(trimmedEmail, trimmedPassword);
       const user = userCredential.user;
       const docRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(docRef);
@@ -28,7 +33,20 @@ const Login = () => {
         navigate("/user/dashboard");
       }
     } catch (err) {
-      setError("Invalid credentials. Please try again.");
+      // Provide more helpful error messages based on error code
+      if (err.code === "auth/user-not-found") {
+        setError("No account found with this email address.");
+      } else if (err.code === "auth/wrong-password") {
+        setError("Incorrect password. Please try again.");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Invalid email address format.");
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Too many failed attempts. Please try again later.");
+      } else if (err.code === "auth/invalid-credential") {
+        setError("Invalid credentials. Please check your email and password.");
+      } else {
+        setError("Failed to log in. Please try again.");
+      }
     }
     setLoading(false);
   };
@@ -96,7 +114,7 @@ const Login = () => {
                   className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-white transition-all outline-none"
                   placeholder="name@company.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(e.target.value.trim())}
                   required
                 />
               </div>
@@ -116,7 +134,7 @@ const Login = () => {
                   className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-white transition-all outline-none"
                   placeholder="••••••••"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value.trim())}
                   required
                 />
               </div>
