@@ -114,7 +114,7 @@ const Login = () => {
                   className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-white transition-all outline-none"
                   placeholder="name@company.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value.trim())}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                 />
               </div>
@@ -122,8 +122,8 @@ const Login = () => {
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <label className="block text-sm font-medium text-slate-300">Password</label>
-                  <Link 
-                    to="/forgot-password" 
+                  <Link
+                    to="/forgot-password"
                     className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
                   >
                     Forgot Password?
@@ -134,7 +134,7 @@ const Login = () => {
                   className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-white transition-all outline-none"
                   placeholder="••••••••"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value.trim())}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                 />
               </div>
