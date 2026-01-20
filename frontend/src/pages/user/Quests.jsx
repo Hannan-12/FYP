@@ -7,6 +7,31 @@ import Editor from "@monaco-editor/react";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, setDoc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
 
+// Mock quest data for when backend is unavailable
+const MOCK_QUESTS = {
+  "Beginner": [
+    {"id": 1, "title": "Loop Logic", "task": "Print numbers 1 to 10 using a for loop.", "xp": 50},
+    {"id": 2, "title": "Variable Swap", "task": "Swap two variables without using a third one.", "xp": 40},
+    {"id": 3, "title": "Sum Calculator", "task": "Create a function that takes two numbers and returns their sum.", "xp": 45},
+    {"id": 4, "title": "Even or Odd", "task": "Write a program that checks if a number is even or odd.", "xp": 50},
+    {"id": 5, "title": "String Reversal", "task": "Reverse a string without using built-in reverse functions.", "xp": 60},
+  ],
+  "Intermediate": [
+    {"id": 13, "title": "List Comprehension", "task": "Convert a list of strings to uppercase using list comprehension in one line.", "xp": 100},
+    {"id": 14, "title": "Dictionary Merge", "task": "Merge two dictionaries and sum values for common keys.", "xp": 120},
+    {"id": 15, "title": "Fibonacci Generator", "task": "Create a function that generates the first n Fibonacci numbers.", "xp": 110},
+    {"id": 16, "title": "Anagram Detector", "task": "Write a function to check if two strings are anagrams of each other.", "xp": 105},
+    {"id": 17, "title": "Prime Number Checker", "task": "Create an efficient function to check if a number is prime.", "xp": 115},
+  ],
+  "Advanced": [
+    {"id": 25, "title": "Decorator Design", "task": "Write a decorator that logs the execution time of a function.", "xp": 200},
+    {"id": 26, "title": "Async Fetch", "task": "Implement a parallel data fetcher using asyncio.gather.", "xp": 250},
+    {"id": 27, "title": "LRU Cache", "task": "Implement a Least Recently Used (LRU) cache with get and put operations.", "xp": 220},
+    {"id": 28, "title": "Custom Context Manager", "task": "Create a context manager using __enter__ and __exit__ methods.", "xp": 210},
+    {"id": 29, "title": "Metaclass Magic", "task": "Create a metaclass that automatically adds a timestamp to class instances.", "xp": 240},
+  ]
+};
+
 const Quests = () => {
   const [quest, setQuest] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -74,7 +99,15 @@ const Quests = () => {
         setKeystrokes(0);
         setResult(null);
       } catch (error) {
-        console.error("Failed to fetch quest:", error);
+        console.error("Failed to fetch quest from backend, using mock data:", error);
+        // Fallback to mock data if backend is unavailable
+        const mockQuests = MOCK_QUESTS[userSkillLevel] || MOCK_QUESTS["Beginner"];
+        const randomQuest = mockQuests[Math.floor(Math.random() * mockQuests.length)];
+        setQuest(randomQuest);
+        setCode(`# ${randomQuest.title}\n# Task: ${randomQuest.task}\n\n# Write your solution here:\n`);
+        startTimeRef.current = Date.now();
+        setKeystrokes(0);
+        setResult(null);
       } finally {
         setLoading(false);
       }
@@ -104,7 +137,15 @@ const Quests = () => {
         setKeystrokes(0);
         setResult(null);
       } catch (error) {
-        console.error("Failed to fetch quest:", error);
+        console.error("Failed to fetch quest from backend, using mock data:", error);
+        // Fallback to mock data if backend is unavailable
+        const mockQuests = MOCK_QUESTS[userSkillLevel] || MOCK_QUESTS["Beginner"];
+        const randomQuest = mockQuests[Math.floor(Math.random() * mockQuests.length)];
+        setQuest(randomQuest);
+        setCode(`# ${randomQuest.title}\n# Task: ${randomQuest.task}\n\n# Write your solution here:\n`);
+        startTimeRef.current = Date.now();
+        setKeystrokes(0);
+        setResult(null);
       } finally {
         setLoading(false);
       }
