@@ -34,41 +34,60 @@ const UserDashboard = () => {
   const [chartData, setChartData] = useState([]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      console.log("⚠️ Dashboard: No user authenticated");
+      return;
+    }
+
+    console.log("📊 Dashboard: Fetching sessions for", user.email);
 
     const q = query(
       collection(db, "sessions"),
-      where("email", "==", user.email), 
+      where("email", "==", user.email),
       orderBy("timestamp", "desc")
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setSessions(data);
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log(`✅ Dashboard: Loaded ${data.length} sessions`);
+        setSessions(data);
 
-      if (data.length > 0) {
-        const avgAcc = 100 - (data.reduce((acc, curr) => acc + curr.stats.aiProbability, 0) / data.length);
-        setStats({
-          total: data.length,
-          accuracy: Math.round(avgAcc),
-          skill: data[0].stats.skillLevel
-        });
+        if (data.length > 0) {
+          const avgAcc = 100 - (data.reduce((acc, curr) => acc + curr.stats.aiProbability, 0) / data.length);
+          setStats({
+            total: data.length,
+            accuracy: Math.round(avgAcc),
+            skill: data[0].stats.skillLevel
+          });
 
-        const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
-        data.forEach(s => {
-          const level = s.stats?.skillLevel || "Beginner";
-          if (skills[level] !== undefined) skills[level]++;
-        });
+          const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
+          data.forEach(s => {
+            const level = s.stats?.skillLevel || "Beginner";
+            if (skills[level] !== undefined) skills[level]++;
+          });
 
-        const formattedData = [
-          { name: "Beginner", value: skills.Beginner },
-          { name: "Intermediate", value: skills.Intermediate },
-          { name: "Advanced", value: skills.Advanced }
-        ].filter(item => item.value > 0);
+          const formattedData = [
+            { name: "Beginner", value: skills.Beginner },
+            { name: "Intermediate", value: skills.Intermediate },
+            { name: "Advanced", value: skills.Advanced }
+          ].filter(item => item.value > 0);
 
-        setChartData(formattedData);
+          setChartData(formattedData);
+        } else {
+          console.log("ℹ️ Dashboard: No sessions found. Complete quests to populate data.");
+        }
+      },
+      (error) => {
+        console.error("❌ Dashboard: Error fetching sessions:", error);
+        if (error.code === 'permission-denied') {
+          console.error("🔒 Permission denied. Check Firestore security rules.");
+        } else if (error.code === 'failed-precondition') {
+          console.error("📑 Missing Firestore index. Check Firebase console for index creation link.");
+        }
       }
-    });
+    );
 
     return () => unsubscribe();
   }, [user]);
@@ -119,19 +138,34 @@ const UserDashboard = () => {
             </h2>
           </div>
           <div className="divide-y divide-slate-700/50 max-h-[400px] overflow-y-auto">
-            {sessions.map((session) => (
-              <div key={session.id} className="p-4 hover:bg-slate-700/30 transition flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-200 capitalize">{session.language} Practice</p>
-                  <p className="text-xs text-slate-500">
-                    {session.timestamp ? new Date(session.timestamp.seconds * 1000).toLocaleString() : "Just now"}
-                  </p>
+            {sessions.length > 0 ? (
+              sessions.map((session) => (
+                <div key={session.id} className="p-4 hover:bg-slate-700/30 transition flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-200 capitalize">{session.language} Practice</p>
+                    <p className="text-xs text-slate-500">
+                      {session.timestamp ? new Date(session.timestamp.seconds * 1000).toLocaleString() : "Just now"}
+                    </p>
+                  </div>
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                    {session.stats.skillLevel}
+                  </span>
                 </div>
-                <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                  {session.stats.skillLevel}
-                </span>
+              ))
+            ) : (
+              <div className="p-12 text-center">
+                <Code size={48} className="mx-auto text-slate-600 mb-4" />
+                <h3 className="text-lg font-semibold text-slate-400 mb-2">No activity yet</h3>
+                <p className="text-slate-500 text-sm mb-4">Complete your first quest to start tracking your progress</p>
+                <button
+                  onClick={() => navigate("/user/quests")}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors inline-flex items-center gap-2"
+                >
+                  <Zap size={16} />
+                  Start Your First Quest
+                </button>
               </div>
-            ))}
+            )}
           </div>
         </motion.div>
 
@@ -145,15 +179,24 @@ const UserDashboard = () => {
             <PieIcon size={20} className="text-purple-400" />
             Skill Breakdown
           </h2>
-          <ResponsiveContainer width="100%" height={250}>
-            <PieChart>
-              <Pie data={chartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-              </Pie>
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-              <Legend verticalAlign="bottom" height={36} />
-            </PieChart>
-          </ResponsiveContainer>
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={250}>
+              <PieChart>
+                <Pie data={chartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                  {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                <Legend verticalAlign="bottom" height={36} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[250px] flex items-center justify-center">
+              <div className="text-center">
+                <TrendingUp size={40} className="mx-auto text-slate-600 mb-3" />
+                <p className="text-slate-500 text-sm">Complete quests to see your skill distribution</p>
+              </div>
+            </div>
+          )}
         </motion.div>
       </div>
     </div>
