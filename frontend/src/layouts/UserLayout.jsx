@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, History, User, LogOut } from "lucide-react";
+import { LayoutDashboard, History, User, LogOut, Trophy, Target } from "lucide-react";
 import { motion } from "framer-motion";
 
 const UserLayout = () => {
@@ -92,6 +92,8 @@ const UserLayout = () => {
         {/* Navigation */}
         <nav className="flex-1 px-3">
           <NavItem to="/user/dashboard" icon={LayoutDashboard} label="Overview" />
+          <NavItem to="/user/quests" icon={Target} label="Quests" />
+          <NavItem to="/user/progress" icon={Trophy} label="Progress" />
           <NavItem to="/user/history" icon={History} label="History" />
           <NavItem to="/user/profile" icon={User} label="Profile" />
         </nav>

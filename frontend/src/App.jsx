@@ -18,7 +18,8 @@ import Analytics from "./pages/admin/Analytics";
 import UserLayout from "./layouts/UserLayout";
 import UserDashboard from "./pages/user/UserDashboard";
 import UserProfile from "./pages/user/UserProfile";
-import Quests from "./pages/user/Quests"; // New Import
+import Progress from "./pages/user/Progress";
+import Quests from "./pages/user/Quests";
 
 function App() {
   return (
@@ -38,7 +39,8 @@ function App() {
 
           <Route path="/user" element={<ProtectedRoute requiredRole="student"><UserLayout /></ProtectedRoute>}>
             <Route path="dashboard" element={<UserDashboard />} />
-            <Route path="quests" element={<Quests />} /> {/* New Route */}
+            <Route path="quests" element={<Quests />} />
+            <Route path="progress" element={<Progress />} />
             <Route path="history" element={<div className="p-8 text-white">Session History (Coming Soon)</div>} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
