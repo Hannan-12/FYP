@@ -137,11 +137,14 @@ async def analyze_code(session: CodeSession):
         }
 
         db.collection("sessions").add(doc_data)
-        
+
         return {
-            "status": "success", 
-            "skill": skill_level,
-            "ai_prob": ai_probability
+            "status": "success",
+            "stats": {
+                "skillLevel": skill_level,
+                "confidence": confidence,
+                "aiProbability": ai_probability
+            }
         }
 
     except Exception as e:
