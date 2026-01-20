@@ -39,11 +39,11 @@ const UserDashboard = () => {
       return;
     }
 
-    console.log("📊 Dashboard: Fetching sessions for", user.email);
+    console.log("📊 Dashboard: Fetching sessions for user:", user.uid);
 
     const q = query(
       collection(db, "sessions"),
-      where("email", "==", user.email),
+      where("userId", "==", user.uid),
       orderBy("timestamp", "desc")
     );
 
