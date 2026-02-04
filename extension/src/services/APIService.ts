@@ -6,7 +6,10 @@ import { Logger } from '../utils/logger';
 import {
   APIResponse,
   AIDetectionRequest,
-  AIDetectionResponse
+  AIDetectionResponse,
+  CodeSessionRequest,
+  AnalyzeResponse,
+  UserVerifyResponse
 } from '../types';
 import { CodeFeatures } from '../types/tracking.types';
 
@@ -27,7 +30,66 @@ export class APIService {
   }
 
   /**
+   * Verify that a user exists in the backend/Firestore
+   * Called during login to ensure user has registered on the web first
+   *
+   * @param email - User's email address
+   * @returns User verification response with userId or null if not found
+   */
+  async verifyUser(email: string): Promise<UserVerifyResponse | null> {
+    try {
+      Logger.info('Verifying user exists in backend', { email });
+
+      const response = await this.get<UserVerifyResponse>(`/get-user-id/${encodeURIComponent(email)}`);
+
+      if (response) {
+        Logger.info('User verified successfully', { userId: response.userId });
+      }
+
+      return response;
+    } catch (error) {
+      Logger.error('User verification failed', error);
+      return null;
+    }
+  }
+
+  /**
+   * Submit code for analysis to the backend
+   * This is the main endpoint that stores sessions in Firestore
+   *
+   * @param request - Code session data matching backend's CodeSession model
+   * @returns Analysis response with skill level, confidence, and AI probability
+   */
+  async analyzeCode(request: CodeSessionRequest): Promise<AnalyzeResponse | null> {
+    try {
+      Logger.info('Submitting code for analysis', {
+        fileName: request.fileName,
+        language: request.language,
+        duration: request.duration,
+        keystrokes: request.keystrokes
+      });
+
+      const response = await this.post<AnalyzeResponse>('/analyze', request);
+
+      if (response) {
+        Logger.info('Code analysis complete', {
+          skillLevel: response.stats.skillLevel,
+          confidence: response.stats.confidence,
+          aiProbability: response.stats.aiProbability
+        });
+      }
+
+      return response;
+
+    } catch (error) {
+      Logger.error('Code analysis request failed', error);
+      return null;
+    }
+  }
+
+  /**
    * Send code features to backend for AI detection analysis
+   * Legacy method - use analyzeCode for new implementations
    *
    * @param userId - Firebase user ID
    * @param sessionId - Current tracking session ID

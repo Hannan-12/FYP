@@ -63,6 +63,7 @@ export interface SessionUploadResponse {
 
 /**
  * AI Detection request (sent to backend)
+ * Matches backend's CodeSession model
  */
 export interface AIDetectionRequest {
   userId: string;
@@ -70,6 +71,41 @@ export interface AIDetectionRequest {
   file: string;
   features: import('./tracking.types').CodeFeatures;
   consentGiven: boolean;
+}
+
+/**
+ * Code Session request for /analyze endpoint
+ * This matches the backend's expected format exactly
+ */
+export interface CodeSessionRequest {
+  userId: string;
+  email: string;
+  code: string;
+  language: string;
+  fileName: string;
+  duration: number;     // seconds
+  keystrokes: number;
+}
+
+/**
+ * Analysis response from backend /analyze endpoint
+ */
+export interface AnalyzeResponse {
+  status: string;
+  stats: {
+    skillLevel: 'Beginner' | 'Intermediate' | 'Advanced';
+    confidence: number;       // 0-100
+    aiProbability: number;    // 0-100
+  };
+}
+
+/**
+ * User verification response from backend
+ */
+export interface UserVerifyResponse {
+  status: string;
+  userId: string;
+  email: string;
 }
 
 /**
