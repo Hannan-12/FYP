@@ -53,17 +53,17 @@
       "properties": {
         "devskill.auth.firebaseApiKey": {
           "type": "string",
-          "default": "",
+          "default": "AIzaSyD7afZSZTkh6yoc30b4Amqh9EeEd99RG54",
           "description": "Firebase API Key for authentication"
         },
         "devskill.auth.firebaseAuthDomain": {
           "type": "string",
-          "default": "divskill-tracker.firebaseapp.com",
+          "default": "devskill-fyp.firebaseapp.com",
           "description": "Firebase Auth Domain"
         },
         "devskill.auth.firebaseProjectId": {
           "type": "string",
-          "default": "divskill-tracker",
+          "default": "devskill-fyp",
           "description": "Firebase Project ID"
         },
         "devskill.auth.enableAutoLogin": {
