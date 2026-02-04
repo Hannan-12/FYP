@@ -91,16 +91,19 @@ export class SkillAnalysisService {
     });
 
     const languages = Object.keys(languageDistribution);
-    const primaryLanguage = languages.reduce((a, b) =>
-      languageDistribution[a] > languageDistribution[b] ? a : b,
-      languages[0] || 'unknown'
-    );
+    const primaryLanguage = languages.length > 0
+      ? languages.reduce((a, b) =>
+          languageDistribution[a] > languageDistribution[b] ? a : b
+        )
+      : 'unknown';
 
     // Normalize language distribution to percentages
     const totalFiles = files.length;
-    Object.keys(languageDistribution).forEach(lang => {
-      languageDistribution[lang] = (languageDistribution[lang] / totalFiles) * 100;
-    });
+    if (totalFiles > 0) {
+      Object.keys(languageDistribution).forEach(lang => {
+        languageDistribution[lang] = (languageDistribution[lang] / totalFiles) * 100;
+      });
+    }
 
     // Typing speed (chars per minute)
     const activeMinutes = totalActiveTime / 60000;
