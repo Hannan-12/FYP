@@ -91,6 +91,9 @@ const Quests = () => {
     const fetchQuest = async () => {
       try {
         const response = await fetch(`http://localhost:8000/get-quest/${userSkillLevel}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
         setQuest(data);
         // Reset code editor with default template
@@ -130,6 +133,9 @@ const Quests = () => {
     const fetchQuest = async () => {
       try {
         const response = await fetch(`http://localhost:8000/get-quest/${userSkillLevel}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
         setQuest(data);
         setCode(`# ${data.title}\n# Task: ${data.task}\n\n# Write your solution here:\n`);
@@ -178,6 +184,9 @@ const Quests = () => {
         })
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const analysis = await response.json();
 
       // Award XP - Update user profile in Firestore

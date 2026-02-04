@@ -36,8 +36,8 @@ const AdminDashboard = () => {
       const sessionData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSessions(sessionData);
       
-      const aiCount = sessionData.filter(s => s.stats.aiProbability > 50).length;
-      const flags = sessionData.filter(s => s.stats.aiProbability > 80).length;
+      const aiCount = sessionData.filter(s => s.stats?.aiProbability > 50).length;
+      const flags = sessionData.filter(s => s.stats?.aiProbability > 80).length;
 
       setStats({
         totalStudents: 12, 
@@ -101,22 +101,22 @@ const AdminDashboard = () => {
                   <td className="p-4 pl-6 font-medium text-slate-200">{session.email}</td>
                   <td className="p-4">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
-                      session.stats.skillLevel === 'Advanced' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                      session.stats.skillLevel === 'Beginner' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' : 
+                      session.stats?.skillLevel === 'Advanced' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                      session.stats?.skillLevel === 'Beginner' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' :
                       'bg-blue-500/10 text-blue-400 border-blue-500/20'
                     }`}>
-                      {session.stats.skillLevel}
+                      {session.stats?.skillLevel || 'N/A'}
                     </span>
                   </td>
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-24 bg-slate-700 rounded-full h-1.5 overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full ${session.stats.aiProbability > 50 ? 'bg-red-500' : 'bg-emerald-500'}`} 
-                          style={{ width: `${Math.min(session.stats.aiProbability, 100)}%` }}
+                        <div
+                          className={`h-full rounded-full ${(session.stats?.aiProbability || 0) > 50 ? 'bg-red-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${Math.min(session.stats?.aiProbability || 0, 100)}%` }}
                         />
                       </div>
-                      <span className="text-sm text-slate-400">{session.stats.aiProbability.toFixed(0)}%</span>
+                      <span className="text-sm text-slate-400">{(session.stats?.aiProbability || 0).toFixed(0)}%</span>
                     </div>
                   </td>
                   <td className="p-4 text-slate-400 capitalize">{session.language}</td>

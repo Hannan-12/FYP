@@ -253,7 +253,9 @@ export class TrackingService {
     // Update file metrics
     if (isPaste) {
       this.fileMetrics[file].pasteCount++;
-      this.session!.totalPastes++;
+      if (this.session) {
+        this.session.totalPastes++;
+      }
 
       // Record paste event
       const pasteDetail: PasteDetail = {
@@ -295,7 +297,9 @@ export class TrackingService {
     this.fileMetrics[file].editCount++;
     this.fileMetrics[file].linesAdded += linesAdded;
     this.fileMetrics[file].linesDeleted += linesDeleted;
-    this.session!.totalEdits++;
+    if (this.session) {
+      this.session.totalEdits++;
+    }
 
     // Calculate typing ratio
     const total = this.fileMetrics[file].keystrokeCount + this.fileMetrics[file].pasteCount;
@@ -347,8 +351,8 @@ export class TrackingService {
       this.fileMetrics[this.currentFile].switchFromCount++;
     }
 
-    if (file) {
-      this.ensureFileMetrics(file, language!);
+    if (file && language) {
+      this.ensureFileMetrics(file, language);
       this.fileMetrics[file].switchToCount++;
     }
 

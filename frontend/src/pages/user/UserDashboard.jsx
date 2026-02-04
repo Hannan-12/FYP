@@ -55,11 +55,11 @@ const UserDashboard = () => {
         setSessions(data);
 
         if (data.length > 0) {
-          const avgAcc = 100 - (data.reduce((acc, curr) => acc + curr.stats.aiProbability, 0) / data.length);
+          const avgAcc = 100 - (data.reduce((acc, curr) => acc + (curr.stats?.aiProbability || 0), 0) / data.length);
           setStats({
             total: data.length,
             accuracy: Math.round(avgAcc),
-            skill: data[0].stats.skillLevel
+            skill: data[0].stats?.skillLevel || "N/A"
           });
 
           const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
@@ -148,7 +148,7 @@ const UserDashboard = () => {
                     </p>
                   </div>
                   <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                    {session.stats.skillLevel}
+                    {session.stats?.skillLevel || "N/A"}
                   </span>
                 </div>
               ))
