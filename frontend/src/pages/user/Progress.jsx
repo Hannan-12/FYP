@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-const Profile = () => {
+const Progress = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
@@ -333,4 +333,4 @@ const Profile = () => {
   );
 };
 
-export default Profile;
+export default Progress;
