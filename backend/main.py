@@ -2,11 +2,10 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from datetime import datetime
+from google.cloud.firestore_v1.base_query import FieldFilter
 import os
-import joblib 
-import numpy as np
-import random # Added for quest selection
+import joblib
+import random
 
 cred_path = "firebase_config/serviceAccountKey.json"
 
@@ -30,8 +29,10 @@ except Exception as e:
     try:
         ai_model = joblib.load("skill_classifier.pkl")
         print("🧠 AI Model Loaded Successfully (from root)")
-    except:
+    except FileNotFoundError:
         print(f"⚠️ Warning: AI Model not found. ({e})")
+    except Exception as ex:
+        print(f"⚠️ Warning: AI Model loading failed. ({ex})")
 
 # --- Gamified Quests Data ---
 CHALLENGES = {
@@ -94,8 +95,6 @@ class CodeSession(BaseModel):
 async def get_user_id(email: str):
     """Returns the userId (Firebase Auth UID) for a given email address."""
     try:
-        from google.cloud.firestore_v1.base_query import FieldFilter
-
         users_ref = db.collection("users").where(filter=FieldFilter("email", "==", email)).stream()
 
         for doc in users_ref:

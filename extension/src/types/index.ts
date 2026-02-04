@@ -5,3 +5,4 @@ export * from './tracking.types';
 export * from './auth.types';
 export * from './api.types';
 export * from './analysis.types';
+export * from './skill.types';

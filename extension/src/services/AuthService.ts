@@ -371,7 +371,9 @@ export class AuthService implements vscode.Disposable {
     const refreshDelay = (expiresIn - refreshBuffer) * 1000;
 
     this.tokenRefreshTimer = setTimeout(() => {
-      this.refreshToken();
+      this.refreshToken().catch(error => {
+        Logger.error('Scheduled token refresh failed', error);
+      });
     }, refreshDelay);
 
     Logger.debug(`Token refresh scheduled in ${refreshDelay / 1000} seconds`);
