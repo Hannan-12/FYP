@@ -6,7 +6,9 @@ import { TrackingService } from './services/TrackingService';
 import { AuthService } from './services/AuthService';
 import { APIService } from './services/APIService';
 import { Logger, LogLevel } from './utils/logger';
+import { LanguageDetector } from './utils/languageDetector';
 import { registerAuthCommands } from './commands/authCommands';
+import { CodeSessionRequest } from './types';
 
 /**
  * Global services
@@ -52,9 +54,28 @@ export function activate(context: vscode.ExtensionContext) {
     registerCommands(context);
     registerAuthCommands(context, authService);
 
-    // Listen to auth state changes to update status bar
-    authService.onAuthStateChanged(() => {
+    // Listen to auth state changes to update status bar and verify user
+    authService.onAuthStateChanged(async (state) => {
       updateStatusBar();
+
+      // When user logs in, verify they exist in Firestore
+      if (state.isAuthenticated && state.user?.email) {
+        const verification = await apiService.verifyUser(state.user.email);
+
+        if (!verification) {
+          // User doesn't exist in Firestore - they need to register on web first
+          Logger.warn('User not found in Firestore', { email: state.user.email });
+          vscode.window.showErrorMessage(
+            'Account not found. Please register at the DevSkill Dashboard first, then sign in here.'
+          );
+          await authService.signOut();
+        } else {
+          Logger.info('User verified in Firestore', {
+            email: state.user.email,
+            firestoreUserId: verification.userId
+          });
+        }
+      }
     });
 
     // Set up status bar update timer
@@ -65,36 +86,72 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Register file save listener for automatic code analysis
     const saveListener = vscode.workspace.onDidSaveTextDocument(async (document) => {
-      if (trackingService.isRunning()) {
-        // Analyze code on save (temporary processing - code not stored)
-        const features = await trackingService.analyzeFile(document);
-        if (features) {
-          Logger.info(`Auto-analyzed on save: ${document.fileName}`, {
-            codeLines: features.codeLines,
-            complexity: features.cyclomaticComplexity
-          });
+      // Only analyze if tracking is running and user is authenticated
+      if (!trackingService.isRunning() || !authService.isAuthenticated()) {
+        return;
+      }
 
-          // Send to backend for AI detection if user is authenticated
-          if (authService.isAuthenticated()) {
-            const user = authService.getCurrentUser();
-            const session = trackingService.getSession();
+      const user = authService.getCurrentUser();
+      const session = trackingService.getSession();
 
-            if (user && session) {
-              const aiResult = await apiService.detectAI(
-                user.uid,
-                session.id,
-                document.fileName,
-                features
-              );
+      if (!user || !session) {
+        return;
+      }
 
-              if (aiResult) {
-                Logger.info(`AI Detection result: ${aiResult.aiLikelihoodScore}%`, {
-                  confidence: aiResult.confidence,
-                  recommendation: aiResult.recommendation
-                });
-              }
-            }
-          }
+      // Get the code and file info
+      const code = document.getText();
+      const fileName = document.fileName;
+      const language = LanguageDetector.detectLanguage(fileName);
+
+      // Skip non-code files
+      if (!LanguageDetector.isCodeFile(fileName)) {
+        Logger.debug(`Skipping non-code file: ${fileName}`);
+        return;
+      }
+
+      // Skip very small files
+      if (code.split('\n').length < 5) {
+        Logger.debug(`Skipping small file: ${fileName}`);
+        return;
+      }
+
+      // Calculate duration since session started
+      const duration = (Date.now() - session.startTime) / 1000; // seconds
+      const keystrokes = trackingService.getKeystrokeCount();
+
+      // Build the request matching backend's CodeSession model
+      const request: CodeSessionRequest = {
+        userId: user.uid,
+        email: user.email || '',
+        code: code,
+        language: language,
+        fileName: fileName.split('/').pop() || fileName, // Just the filename, not full path
+        duration: duration,
+        keystrokes: keystrokes
+      };
+
+      Logger.info(`Submitting code for analysis: ${fileName}`, {
+        language,
+        codeLength: code.length,
+        duration,
+        keystrokes
+      });
+
+      // Send to backend for analysis
+      const result = await apiService.analyzeCode(request);
+
+      if (result) {
+        Logger.info(`Analysis result for ${fileName}`, {
+          skillLevel: result.stats.skillLevel,
+          confidence: result.stats.confidence,
+          aiProbability: result.stats.aiProbability
+        });
+
+        // Show notification if AI probability is high
+        if (result.stats.aiProbability > 70) {
+          vscode.window.showWarningMessage(
+            `⚠️ High AI detection (${result.stats.aiProbability.toFixed(1)}%) for ${fileName.split('/').pop()}`
+          );
         }
       }
     });
@@ -181,46 +238,73 @@ function registerCommands(context: vscode.ExtensionContext) {
     'devskill-tracker.analyzeFile',
     async () => {
       try {
-        vscode.window.showInformationMessage('Analyzing current file...');
-        const features = await trackingService.analyzeCurrentFile();
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          vscode.window.showWarningMessage('No file is currently open.');
+          return;
+        }
 
-        if (features) {
-          // Show local analysis summary
+        // Check if user is authenticated
+        if (!authService.isAuthenticated()) {
+          vscode.window.showWarningMessage('Please sign in to analyze files.');
+          return;
+        }
+
+        const user = authService.getCurrentUser();
+        const session = trackingService.getSession();
+
+        if (!user) {
+          vscode.window.showWarningMessage('User not found. Please sign in again.');
+          return;
+        }
+
+        vscode.window.showInformationMessage('Analyzing current file...');
+
+        const document = editor.document;
+        const code = document.getText();
+        const fileName = document.fileName;
+        const language = LanguageDetector.detectLanguage(fileName);
+
+        // Skip non-code files
+        if (!LanguageDetector.isCodeFile(fileName)) {
+          vscode.window.showWarningMessage('This file type is not supported for analysis.');
+          return;
+        }
+
+        // Calculate duration since session started (or 0 if no session)
+        const duration = session ? (Date.now() - session.startTime) / 1000 : 0;
+        const keystrokes = trackingService.getKeystrokeCount();
+
+        // Build the request
+        const request: CodeSessionRequest = {
+          userId: user.uid,
+          email: user.email || '',
+          code: code,
+          language: language,
+          fileName: fileName.split('/').pop() || fileName,
+          duration: duration,
+          keystrokes: keystrokes
+        };
+
+        // Send to backend for analysis
+        const result = await apiService.analyzeCode(request);
+
+        if (result) {
           const summary = [
-            `Code Lines: ${features.codeLines}`,
-            `Complexity: ${features.cyclomaticComplexity}`,
-            `Functions: ${features.functionCount}`,
-            `Paste Ratio: ${(features.pasteRatio * 100).toFixed(1)}%`
+            `Skill Level: ${result.stats.skillLevel}`,
+            `Confidence: ${result.stats.confidence.toFixed(1)}%`,
+            `AI Detection: ${result.stats.aiProbability.toFixed(1)}%`
           ].join(' | ');
 
-          vscode.window.showInformationMessage(`Local Analysis: ${summary}`);
-
-          // Send to backend for AI detection if authenticated
-          if (authService.isAuthenticated()) {
-            const user = authService.getCurrentUser();
-            const session = trackingService.getSession();
-            const editor = vscode.window.activeTextEditor;
-
-            if (user && session && editor) {
-              vscode.window.showInformationMessage('Checking for AI-generated code...');
-
-              const aiResult = await apiService.detectAI(
-                user.uid,
-                session.id,
-                editor.document.fileName,
-                features
-              );
-
-              if (aiResult) {
-                const aiSummary = `AI Likelihood: ${aiResult.aiLikelihoodScore.toFixed(1)}% | Confidence: ${aiResult.confidence}%`;
-                vscode.window.showInformationMessage(`${aiSummary}\n${aiResult.recommendation}`);
-              } else {
-                vscode.window.showWarningMessage('Could not connect to backend for AI detection.');
-              }
-            }
+          if (result.stats.aiProbability > 70) {
+            vscode.window.showWarningMessage(`⚠️ High AI Detection! ${summary}`);
           } else {
-            vscode.window.showInformationMessage('Sign in to enable AI detection analysis.');
+            vscode.window.showInformationMessage(`Analysis: ${summary}`);
           }
+
+          Logger.info('Manual analysis complete', result.stats);
+        } else {
+          vscode.window.showWarningMessage('Could not connect to backend. Make sure the server is running.');
         }
       } catch (error) {
         Logger.error('Failed to analyze file', error);
