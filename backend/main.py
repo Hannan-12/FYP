@@ -1,6 +1,7 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google.cloud.firestore_v1.base_query import FieldFilter
 import os
@@ -18,7 +19,23 @@ else:
     print("✅ Firebase Admin Connected")
 
 db = firestore.client()
-app = FastAPI()
+app = FastAPI(title="DevSkill Tracker API", version="1.0.0")
+
+# Enable CORS for frontend and extension
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",      # React dev server
+        "http://localhost:5173",      # Vite dev server
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "vscode-webview://*",         # VS Code extension webview
+        "*"                           # Allow all origins for extension
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- AI Model Loading ---
 ai_model = None
@@ -90,6 +107,16 @@ class CodeSession(BaseModel):
     keystrokes: int
 
 # --- API Endpoints ---
+
+@app.get("/")
+async def root():
+    """Health check endpoint."""
+    return {"status": "ok", "message": "DevSkill Tracker API is running"}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return {"status": "healthy", "version": "1.0.0"}
 
 @app.get("/get-user-id/{email}")
 async def get_user_id(email: str):

@@ -1,40 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { Brain, Trophy, Zap, ChevronLeft, Code2, Sparkles, Play, CheckCircle, XCircle } from "lucide-react";
+import { Brain, Trophy, Zap, ChevronLeft, Code2, Sparkles, Play, CheckCircle, XCircle, AlertTriangle, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Editor from "@monaco-editor/react";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, setDoc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
 
-// Mock quest data for when backend is unavailable
-const MOCK_QUESTS = {
-  "Beginner": [
-    {"id": 1, "title": "Loop Logic", "task": "Print numbers 1 to 10 using a for loop.", "xp": 50},
-    {"id": 2, "title": "Variable Swap", "task": "Swap two variables without using a third one.", "xp": 40},
-    {"id": 3, "title": "Sum Calculator", "task": "Create a function that takes two numbers and returns their sum.", "xp": 45},
-    {"id": 4, "title": "Even or Odd", "task": "Write a program that checks if a number is even or odd.", "xp": 50},
-    {"id": 5, "title": "String Reversal", "task": "Reverse a string without using built-in reverse functions.", "xp": 60},
-  ],
-  "Intermediate": [
-    {"id": 13, "title": "List Comprehension", "task": "Convert a list of strings to uppercase using list comprehension in one line.", "xp": 100},
-    {"id": 14, "title": "Dictionary Merge", "task": "Merge two dictionaries and sum values for common keys.", "xp": 120},
-    {"id": 15, "title": "Fibonacci Generator", "task": "Create a function that generates the first n Fibonacci numbers.", "xp": 110},
-    {"id": 16, "title": "Anagram Detector", "task": "Write a function to check if two strings are anagrams of each other.", "xp": 105},
-    {"id": 17, "title": "Prime Number Checker", "task": "Create an efficient function to check if a number is prime.", "xp": 115},
-  ],
-  "Advanced": [
-    {"id": 25, "title": "Decorator Design", "task": "Write a decorator that logs the execution time of a function.", "xp": 200},
-    {"id": 26, "title": "Async Fetch", "task": "Implement a parallel data fetcher using asyncio.gather.", "xp": 250},
-    {"id": 27, "title": "LRU Cache", "task": "Implement a Least Recently Used (LRU) cache with get and put operations.", "xp": 220},
-    {"id": 28, "title": "Custom Context Manager", "task": "Create a context manager using __enter__ and __exit__ methods.", "xp": 210},
-    {"id": 29, "title": "Metaclass Magic", "task": "Create a metaclass that automatically adds a timestamp to class instances.", "xp": 240},
-  ]
-};
+// Backend API URL - uses environment variable in production
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const Quests = () => {
   const [quest, setQuest] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [code, setCode] = useState("# Write your solution here\n");
   const [userSkillLevel, setUserSkillLevel] = useState("Beginner");
   const [submitting, setSubmitting] = useState(false);
@@ -89,10 +68,13 @@ const Quests = () => {
   // Fetch quest based on user's skill level
   useEffect(() => {
     const fetchQuest = async () => {
+      setLoading(true);
+      setError(null);
+
       try {
-        const response = await fetch(`http://localhost:8000/get-quest/${userSkillLevel}`);
+        const response = await fetch(`${API_BASE_URL}/get-quest/${userSkillLevel}`);
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          throw new Error(`Server error: ${response.status}`);
         }
         const data = await response.json();
         setQuest(data);
@@ -101,16 +83,10 @@ const Quests = () => {
         startTimeRef.current = Date.now();
         setKeystrokes(0);
         setResult(null);
-      } catch (error) {
-        console.error("Failed to fetch quest from backend, using mock data:", error);
-        // Fallback to mock data if backend is unavailable
-        const mockQuests = MOCK_QUESTS[userSkillLevel] || MOCK_QUESTS["Beginner"];
-        const randomQuest = mockQuests[Math.floor(Math.random() * mockQuests.length)];
-        setQuest(randomQuest);
-        setCode(`# ${randomQuest.title}\n# Task: ${randomQuest.task}\n\n# Write your solution here:\n`);
-        startTimeRef.current = Date.now();
-        setKeystrokes(0);
-        setResult(null);
+      } catch (err) {
+        console.error("Failed to fetch quest:", err);
+        setError("Unable to connect to the backend server. Please make sure the backend is running on http://localhost:8000");
+        setQuest(null);
       } finally {
         setLoading(false);
       }
@@ -128,40 +104,32 @@ const Quests = () => {
   };
 
   // Skip to next quest
-  const handleSkipQuest = () => {
+  const handleSkipQuest = async () => {
     setLoading(true);
-    const fetchQuest = async () => {
-      try {
-        const response = await fetch(`http://localhost:8000/get-quest/${userSkillLevel}`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setQuest(data);
-        setCode(`# ${data.title}\n# Task: ${data.task}\n\n# Write your solution here:\n`);
-        startTimeRef.current = Date.now();
-        setKeystrokes(0);
-        setResult(null);
-      } catch (error) {
-        console.error("Failed to fetch quest from backend, using mock data:", error);
-        // Fallback to mock data if backend is unavailable
-        const mockQuests = MOCK_QUESTS[userSkillLevel] || MOCK_QUESTS["Beginner"];
-        const randomQuest = mockQuests[Math.floor(Math.random() * mockQuests.length)];
-        setQuest(randomQuest);
-        setCode(`# ${randomQuest.title}\n# Task: ${randomQuest.task}\n\n# Write your solution here:\n`);
-        startTimeRef.current = Date.now();
-        setKeystrokes(0);
-        setResult(null);
-      } finally {
-        setLoading(false);
+    setError(null);
+    setResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/get-quest/${userSkillLevel}`);
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
       }
-    };
-    fetchQuest();
+      const data = await response.json();
+      setQuest(data);
+      setCode(`# ${data.title}\n# Task: ${data.task}\n\n# Write your solution here:\n`);
+      startTimeRef.current = Date.now();
+      setKeystrokes(0);
+    } catch (err) {
+      console.error("Failed to fetch quest:", err);
+      setError("Unable to connect to the backend server. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Submit solution for analysis
   const handleSubmit = async () => {
-    if (!code.trim() || !user) return;
+    if (!code.trim() || !user || !quest) return;
 
     setSubmitting(true);
     setResult(null);
@@ -170,7 +138,7 @@ const Quests = () => {
       const duration = (Date.now() - startTimeRef.current) / 1000; // seconds
 
       // Submit to backend for analysis
-      const response = await fetch("http://localhost:8000/analyze", {
+      const response = await fetch(`${API_BASE_URL}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -185,7 +153,7 @@ const Quests = () => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Server error: ${response.status}`);
       }
       const analysis = await response.json();
 
@@ -228,11 +196,11 @@ const Quests = () => {
 
       console.log("Analysis result:", analysis);
       console.log(`Awarded ${quest.xp} XP!`);
-    } catch (error) {
-      console.error("Submission failed:", error);
+    } catch (err) {
+      console.error("Submission failed:", err);
       setResult({
         success: false,
-        message: "Failed to submit solution. Please try again."
+        message: "Failed to submit solution. Please make sure the backend server is running and try again."
       });
     } finally {
       setSubmitting(false);
@@ -265,6 +233,23 @@ const Quests = () => {
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
           <p className="text-slate-500">Generating your next challenge...</p>
         </div>
+      ) : error ? (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-500/10 border-2 border-red-500/30 rounded-2xl p-8 text-center"
+        >
+          <AlertTriangle className="text-red-400 mx-auto mb-4" size={48} />
+          <h2 className="text-xl font-bold text-red-400 mb-2">Connection Error</h2>
+          <p className="text-slate-300 mb-6">{error}</p>
+          <button
+            onClick={handleSkipQuest}
+            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center gap-2 mx-auto transition-all"
+          >
+            <RefreshCw size={20} />
+            Try Again
+          </button>
+        </motion.div>
       ) : quest && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
