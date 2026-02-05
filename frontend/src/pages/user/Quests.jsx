@@ -134,10 +134,11 @@ const Quests = () => {
     setSubmitting(true);
     setResult(null);
 
-    try {
-      const duration = (Date.now() - startTimeRef.current) / 1000; // seconds
+    const duration = (Date.now() - startTimeRef.current) / 1000; // seconds
 
-      // Submit to backend for analysis
+    // Step 1: Submit to backend for analysis
+    let analysis = null;
+    try {
       const response = await fetch(`${API_BASE_URL}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -153,11 +154,25 @@ const Quests = () => {
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Backend error response:", errorText);
         throw new Error(`Server error: ${response.status}`);
       }
-      const analysis = await response.json();
+      analysis = await response.json();
+      console.log("Analysis result:", analysis);
+    } catch (err) {
+      console.error("Backend analysis failed:", err);
+      setSubmitting(false);
+      setResult({
+        success: false,
+        message: "Failed to submit solution. Please make sure the backend server is running and try again."
+      });
+      return;
+    }
 
-      // Award XP - Update user profile in Firestore
+    // Step 2: Award XP - Update user profile in Firestore (separate try-catch)
+    let xpAwarded = false;
+    try {
       const profileRef = doc(db, "userProfiles", user.uid);
       const profileSnap = await getDoc(profileRef);
 
@@ -181,30 +196,28 @@ const Quests = () => {
           lastQuestDate: serverTimestamp()
         });
       }
-
-      // Show results
-      setResult({
-        success: true,
-        skillLevel: analysis.stats.skillLevel,
-        confidence: analysis.stats.confidence,
-        aiProbability: analysis.stats.aiProbability,
-        xpEarned: quest.xp,
-        message: analysis.stats.aiProbability > 70
-          ? "⚠️ High AI detection - Try writing the code yourself!"
-          : "Great job! Keep practicing to improve your skills."
-      });
-
-      console.log("Analysis result:", analysis);
+      xpAwarded = true;
       console.log(`Awarded ${quest.xp} XP!`);
     } catch (err) {
-      console.error("Submission failed:", err);
-      setResult({
-        success: false,
-        message: "Failed to submit solution. Please make sure the backend server is running and try again."
-      });
-    } finally {
-      setSubmitting(false);
+      console.error("Failed to update XP in Firestore:", err);
+      // Continue showing results even if XP update fails
     }
+
+    // Step 3: Show results (analysis succeeded even if XP update failed)
+    setResult({
+      success: true,
+      skillLevel: analysis.stats?.skillLevel || "Unknown",
+      confidence: analysis.stats?.confidence ?? 0,
+      aiProbability: analysis.stats?.aiProbability ?? 0,
+      xpEarned: xpAwarded ? quest.xp : 0,
+      message: !xpAwarded
+        ? "⚠️ Analysis complete but XP update failed. Your progress may not be saved."
+        : analysis.stats?.aiProbability > 70
+          ? "⚠️ High AI detection - Try writing the code yourself!"
+          : "Great job! Keep practicing to improve your skills."
+    });
+
+    setSubmitting(false);
   };
 
   return (
@@ -349,12 +362,12 @@ const Quests = () => {
                         </div>
                         <div className="bg-slate-800/50 p-3 rounded-lg">
                           <p className="text-xs text-slate-400">Confidence</p>
-                          <p className="text-lg font-bold text-blue-400">{result.confidence.toFixed(1)}%</p>
+                          <p className="text-lg font-bold text-blue-400">{(result.confidence || 0).toFixed(1)}%</p>
                         </div>
                         <div className="bg-slate-800/50 p-3 rounded-lg">
                           <p className="text-xs text-slate-400">AI Detection</p>
-                          <p className={`text-lg font-bold ${result.aiProbability > 70 ? "text-red-400" : "text-green-400"}`}>
-                            {result.aiProbability.toFixed(1)}%
+                          <p className={`text-lg font-bold ${(result.aiProbability || 0) > 70 ? "text-red-400" : "text-green-400"}`}>
+                            {(result.aiProbability || 0).toFixed(1)}%
                           </p>
                         </div>
                         <div className="bg-slate-800/50 p-3 rounded-lg">
