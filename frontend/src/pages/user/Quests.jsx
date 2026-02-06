@@ -134,10 +134,11 @@ const Quests = () => {
     setSubmitting(true);
     setResult(null);
 
-    try {
-      const duration = (Date.now() - startTimeRef.current) / 1000; // seconds
+    const duration = (Date.now() - startTimeRef.current) / 1000; // seconds
 
-      // Submit to backend for analysis
+    // Step 1: Submit to backend for analysis and validation
+    let analysis = null;
+    try {
       const response = await fetch(`${API_BASE_URL}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,63 +149,97 @@ const Quests = () => {
           language: "python",
           fileName: `${quest.title}.py`,
           duration: duration,
-          keystrokes: keystrokes
+          keystrokes: keystrokes,
+          questId: quest.id  // Send quest ID for validation
         })
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Backend error response:", errorText);
         throw new Error(`Server error: ${response.status}`);
       }
-      const analysis = await response.json();
-
-      // Award XP - Update user profile in Firestore
-      const profileRef = doc(db, "userProfiles", user.uid);
-      const profileSnap = await getDoc(profileRef);
-
-      if (!profileSnap.exists()) {
-        // Create new profile with XP
-        await setDoc(profileRef, {
-          userId: user.uid,
-          email: user.email,
-          totalXP: quest.xp,
-          questsCompleted: 1,
-          streak: 1,
-          badges: [],
-          lastQuestDate: serverTimestamp(),
-          createdAt: serverTimestamp()
-        });
-      } else {
-        // Update existing profile - add XP
-        await updateDoc(profileRef, {
-          totalXP: increment(quest.xp),
-          questsCompleted: increment(1),
-          lastQuestDate: serverTimestamp()
-        });
-      }
-
-      // Show results
-      setResult({
-        success: true,
-        skillLevel: analysis.stats.skillLevel,
-        confidence: analysis.stats.confidence,
-        aiProbability: analysis.stats.aiProbability,
-        xpEarned: quest.xp,
-        message: analysis.stats.aiProbability > 70
-          ? "⚠️ High AI detection - Try writing the code yourself!"
-          : "Great job! Keep practicing to improve your skills."
-      });
-
+      analysis = await response.json();
       console.log("Analysis result:", analysis);
-      console.log(`Awarded ${quest.xp} XP!`);
     } catch (err) {
-      console.error("Submission failed:", err);
+      console.error("Backend analysis failed:", err);
+      setSubmitting(false);
       setResult({
         success: false,
         message: "Failed to submit solution. Please make sure the backend server is running and try again."
       });
-    } finally {
-      setSubmitting(false);
+      return;
     }
+
+    // Check if solution passed validation
+    const solutionPassed = analysis.stats?.passed ?? false;
+    const testsPassed = analysis.stats?.testsPassed ?? 0;
+    const testsTotal = analysis.stats?.testsTotal ?? 0;
+    const validationMessage = analysis.stats?.validationMessage || "";
+    const validationDetails = analysis.stats?.validationDetails || [];
+
+    // Step 2: Award XP ONLY if solution passed validation
+    let xpAwarded = false;
+    if (solutionPassed) {
+      try {
+        const profileRef = doc(db, "userProfiles", user.uid);
+        const profileSnap = await getDoc(profileRef);
+
+        if (!profileSnap.exists()) {
+          // Create new profile with XP
+          await setDoc(profileRef, {
+            userId: user.uid,
+            email: user.email,
+            totalXP: quest.xp,
+            questsCompleted: 1,
+            streak: 1,
+            badges: [],
+            lastQuestDate: serverTimestamp(),
+            createdAt: serverTimestamp()
+          });
+        } else {
+          // Update existing profile - add XP
+          await updateDoc(profileRef, {
+            totalXP: increment(quest.xp),
+            questsCompleted: increment(1),
+            lastQuestDate: serverTimestamp()
+          });
+        }
+        xpAwarded = true;
+        console.log(`Awarded ${quest.xp} XP!`);
+      } catch (err) {
+        console.error("Failed to update XP in Firestore:", err);
+      }
+    }
+
+    // Step 3: Show results with pass/fail status
+    let message = "";
+    if (!solutionPassed) {
+      message = `❌ Solution failed: ${validationMessage}`;
+      if (validationDetails.length > 0) {
+        message += ` (${validationDetails[0]})`;
+      }
+    } else if (!xpAwarded) {
+      message = "⚠️ Solution passed but XP update failed. Your progress may not be saved.";
+    } else if (analysis.stats?.aiProbability > 70) {
+      message = "⚠️ High AI detection - Try writing the code yourself!";
+    } else {
+      message = "🎉 Great job! Solution accepted! Keep practicing to improve your skills.";
+    }
+
+    setResult({
+      success: solutionPassed,
+      passed: solutionPassed,
+      testsPassed: testsPassed,
+      testsTotal: testsTotal,
+      skillLevel: analysis.stats?.skillLevel || "Unknown",
+      confidence: analysis.stats?.confidence ?? 0,
+      aiProbability: analysis.stats?.aiProbability ?? 0,
+      xpEarned: xpAwarded ? quest.xp : 0,
+      message: message
+    });
+
+    setSubmitting(false);
   };
 
   return (
@@ -337,9 +372,19 @@ const Quests = () => {
                   )}
                   <div className="flex-1">
                     <h3 className={`text-xl font-bold mb-2 ${result.success ? "text-green-400" : "text-red-400"}`}>
-                      {result.success ? "Quest Completed!" : "Submission Failed"}
+                      {result.success ? "Quest Completed!" : "Solution Incorrect"}
                     </h3>
                     <p className="text-slate-200 mb-4">{result.message}</p>
+
+                    {/* Show test results for both pass and fail */}
+                    {result.testsTotal > 0 && (
+                      <div className="mb-4 bg-slate-800/50 p-3 rounded-lg inline-block">
+                        <p className="text-xs text-slate-400">Tests Passed</p>
+                        <p className={`text-lg font-bold ${result.success ? "text-green-400" : "text-red-400"}`}>
+                          {result.testsPassed} / {result.testsTotal}
+                        </p>
+                      </div>
+                    )}
 
                     {result.success && (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
@@ -349,12 +394,12 @@ const Quests = () => {
                         </div>
                         <div className="bg-slate-800/50 p-3 rounded-lg">
                           <p className="text-xs text-slate-400">Confidence</p>
-                          <p className="text-lg font-bold text-blue-400">{result.confidence.toFixed(1)}%</p>
+                          <p className="text-lg font-bold text-blue-400">{(result.confidence || 0).toFixed(1)}%</p>
                         </div>
                         <div className="bg-slate-800/50 p-3 rounded-lg">
                           <p className="text-xs text-slate-400">AI Detection</p>
-                          <p className={`text-lg font-bold ${result.aiProbability > 70 ? "text-red-400" : "text-green-400"}`}>
-                            {result.aiProbability.toFixed(1)}%
+                          <p className={`text-lg font-bold ${(result.aiProbability || 0) > 70 ? "text-red-400" : "text-green-400"}`}>
+                            {(result.aiProbability || 0).toFixed(1)}%
                           </p>
                         </div>
                         <div className="bg-slate-800/50 p-3 rounded-lg">
