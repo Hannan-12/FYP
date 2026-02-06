@@ -20,6 +20,7 @@ import UserDashboard from "./pages/user/UserDashboard";
 import UserProfile from "./pages/user/UserProfile";
 import Progress from "./pages/user/Progress";
 import Quests from "./pages/user/Quests";
+import MySessions from "./pages/user/MySessions";
 
 function App() {
   return (
@@ -41,7 +42,7 @@ function App() {
             <Route path="dashboard" element={<UserDashboard />} />
             <Route path="quests" element={<Quests />} />
             <Route path="progress" element={<Progress />} />
-            <Route path="history" element={<div className="p-8 text-white">Session History (Coming Soon)</div>} />
+            <Route path="history" element={<MySessions />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
 
