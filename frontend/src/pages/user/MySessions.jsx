@@ -3,7 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
 import { motion } from "framer-motion";
-import { ChevronLeft, Clock, Code2, Calendar, TrendingUp } from "lucide-react";
+import { ChevronLeft, Clock, Code2, Calendar, TrendingUp, CheckCircle, XCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const MySessions = () => {
@@ -17,18 +17,40 @@ const MySessions = () => {
       if (!user?.uid) return;
 
       try {
-        const sessionsQuery = query(
-          collection(db, "sessions"),
-          where("userId", "==", user.uid),
-          orderBy("timestamp", "desc")
-        );
+        // Try with orderBy first, fall back to without if index doesn't exist
+        let sessionsData = [];
+        try {
+          const sessionsQuery = query(
+            collection(db, "sessions"),
+            where("userId", "==", user.uid),
+            orderBy("timestamp", "desc")
+          );
+          const snapshot = await getDocs(sessionsQuery);
+          sessionsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+        } catch (indexError) {
+          console.warn("Index error, fetching without orderBy:", indexError);
+          // Fallback: fetch without ordering (if composite index doesn't exist)
+          const simpleQuery = query(
+            collection(db, "sessions"),
+            where("userId", "==", user.uid)
+          );
+          const snapshot = await getDocs(simpleQuery);
+          sessionsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          // Sort manually on client side
+          sessionsData.sort((a, b) => {
+            const timeA = a.timestamp?.seconds || 0;
+            const timeB = b.timestamp?.seconds || 0;
+            return timeB - timeA;
+          });
+        }
 
-        const snapshot = await getDocs(sessionsQuery);
-        const sessionsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
+        console.log("Fetched sessions:", sessionsData.length);
         setSessions(sessionsData);
       } catch (error) {
         console.error("Failed to fetch sessions:", error);
@@ -89,16 +111,28 @@ const MySessions = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
-              className="bg-slate-800 border border-slate-700 rounded-2xl p-6 hover:border-indigo-500/30 transition-all"
+              className={`bg-slate-800 border rounded-2xl p-6 hover:border-indigo-500/30 transition-all ${
+                session.stats?.passed === false ? 'border-red-500/30' :
+                session.stats?.passed === true ? 'border-green-500/30' : 'border-slate-700'
+              }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="bg-indigo-500/20 p-3 rounded-xl">
-                    <Code2 className="text-indigo-400" size={24} />
+                  <div className={`p-3 rounded-xl ${
+                    session.stats?.passed === false ? 'bg-red-500/20' :
+                    session.stats?.passed === true ? 'bg-green-500/20' : 'bg-indigo-500/20'
+                  }`}>
+                    {session.stats?.passed === false ? (
+                      <XCircle className="text-red-400" size={24} />
+                    ) : session.stats?.passed === true ? (
+                      <CheckCircle className="text-green-400" size={24} />
+                    ) : (
+                      <Code2 className="text-indigo-400" size={24} />
+                    )}
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-white capitalize">
-                      {session.language || "Unknown"} Session
+                    <h3 className="text-lg font-semibold text-white">
+                      {session.fileName?.replace('.py', '') || session.language || "Unknown"} Session
                     </h3>
                     <div className="flex items-center gap-4 mt-1 text-sm text-slate-400">
                       <span className="flex items-center gap-1">
@@ -113,11 +147,32 @@ const MySessions = () => {
                           ? `${Math.round(session.stats.duration)}s`
                           : "N/A"}
                       </span>
+                      {session.stats?.testsPassed != null && session.stats?.testsTotal != null && (
+                        <span className={`flex items-center gap-1 ${
+                          session.stats.passed ? 'text-green-400' : 'text-red-400'
+                        }`}>
+                          Tests: {session.stats.testsPassed}/{session.stats.testsTotal}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-6">
+                  {/* Pass/Fail Status */}
+                  {session.stats?.passed !== undefined && (
+                    <div className="text-right">
+                      <p className="text-xs text-slate-500">Result</p>
+                      <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                        session.stats.passed
+                          ? 'bg-green-500/20 text-green-400'
+                          : 'bg-red-500/20 text-red-400'
+                      }`}>
+                        {session.stats.passed ? 'Passed' : 'Failed'}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="text-right">
                     <p className="text-xs text-slate-500">Skill Level</p>
                     <span className={`px-3 py-1 rounded-full text-sm font-bold ${
