@@ -1169,6 +1169,246 @@ LANGUAGE_QUESTS = {
         "Beginner": [],
         "Intermediate": [],
         "Advanced": []
+    },
+    "html": {
+        "Beginner": [
+            {
+                "title": "Basic Page Structure",
+                "task": "Create a complete HTML page with <!DOCTYPE html>, <html>, <head> with a <title>, and a <body> containing an <h1> heading and a <p> paragraph.",
+                "xp": 40,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<!DOCTYPE html>", "<html", "<head>", "<title>", "</title>", "<body>", "<h1>", "</h1>", "<p>", "</p>", "</body>", "</html>"]}
+                ]
+            },
+            {
+                "title": "Navigation Bar",
+                "task": "Create a navigation bar using <nav> with an unordered list (<ul>) containing at least 3 list items (<li>), each with an anchor link (<a>).",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<nav>", "<ul>", "<li>", "<a ", "href"]},
+                    {"type": "code_count", "pattern": "<li>", "min": 3}
+                ]
+            },
+            {
+                "title": "Image Gallery",
+                "task": "Create a section with at least 3 images using <img> tags. Each image must have src and alt attributes.",
+                "xp": 45,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<img", "src=", "alt="]},
+                    {"type": "code_count", "pattern": "<img", "min": 3}
+                ]
+            },
+            {
+                "title": "Contact Form",
+                "task": "Build a contact form with <form> containing: a text input for name, an email input, a textarea for message, and a submit button.",
+                "xp": 60,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<form", "<input", "<textarea", "<button"]},
+                    {"type": "code_contains_any", "expected": ["type=\"text\"", "type='text'", "type=\"email\"", "type='email'"]}
+                ]
+            },
+            {
+                "title": "Ordered & Unordered Lists",
+                "task": "Create both an ordered list (<ol>) and an unordered list (<ul>), each with at least 3 items.",
+                "xp": 40,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<ol>", "<ul>", "<li>"]},
+                    {"type": "code_count", "pattern": "<li>", "min": 6}
+                ]
+            },
+            {
+                "title": "Simple Table",
+                "task": "Create an HTML table with <table>, a header row (<thead> with <th>) and at least 3 data rows (<tbody> with <tr> and <td>). The table should have 3 columns.",
+                "xp": 55,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<table", "<tr", "<th", "<td"]},
+                    {"type": "code_count", "pattern": "<tr", "min": 4}
+                ]
+            },
+            {
+                "title": "Semantic HTML",
+                "task": "Build a page layout using semantic HTML5 elements: <header>, <main>, <section>, <article>, and <footer>. Each should contain some text content.",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<header>", "<main>", "<section>", "<article>", "<footer>"]}
+                ]
+            },
+            {
+                "title": "Hyperlinks",
+                "task": "Create a page with at least 3 links: one that opens in the same tab, one that opens in a new tab (target=\"_blank\"), and one that links to a section on the same page using an id.",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<a ", "href=", "id="]},
+                    {"type": "code_count", "pattern": "<a ", "min": 3}
+                ]
+            },
+            {
+                "title": "Video Embed",
+                "task": "Embed a video using the <video> tag with controls attribute, a source, and a fallback text. Also add a heading and description paragraph.",
+                "xp": 45,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<video", "controls", "<source", "</video>"]},
+                    {"type": "code_contains_any", "expected": ["<h1>", "<h2>", "<h3>"]}
+                ]
+            },
+            {
+                "title": "Meta Tags & SEO",
+                "task": "Create an HTML page with proper <head> section including: charset meta tag, viewport meta tag, a description meta tag, and a title tag.",
+                "xp": 45,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<meta", "charset", "viewport", "description", "<title>"]}
+                ]
+            }
+        ],
+        "Intermediate": [
+            {
+                "title": "Responsive Grid Layout",
+                "task": "Create a responsive card grid using CSS Grid or Flexbox. Include at least 4 cards, each with an image placeholder, title, and description. Use media queries or auto-fit/auto-fill for responsiveness.",
+                "xp": 80,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["display: grid", "display: flex", "display:grid", "display:flex"]},
+                    {"type": "code_count", "pattern": "<div", "min": 5}
+                ]
+            },
+            {
+                "title": "CSS Flexbox Navigation",
+                "task": "Build a horizontal navigation bar using Flexbox with a logo on the left and nav links on the right. Include hover effects on the links.",
+                "xp": 70,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["display: flex", "<nav", "hover"]},
+                    {"type": "code_contains_any", "expected": ["justify-content", "align-items"]}
+                ]
+            },
+            {
+                "title": "Form Validation Attributes",
+                "task": "Create a registration form with HTML5 validation: required fields, email type, password with minlength, number input with min/max, and a pattern attribute for phone number.",
+                "xp": 75,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["required", "minlength", "pattern"]},
+                    {"type": "code_contains_any", "expected": ["type=\"email\"", "type='email'", "type=\"password\"", "type='password'"]}
+                ]
+            },
+            {
+                "title": "CSS Animation",
+                "task": "Create a CSS animation using @keyframes. Animate an element to change at least 2 properties (e.g., color, transform, opacity). Use animation-duration and animation-iteration-count.",
+                "xp": 80,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["@keyframes", "animation"]},
+                    {"type": "code_contains_any", "expected": ["transform", "opacity", "color", "background"]}
+                ]
+            },
+            {
+                "title": "Accessible Form",
+                "task": "Build an accessible form with proper <label> elements linked to inputs via for/id attributes, fieldset/legend grouping, and aria attributes.",
+                "xp": 75,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<label", "for=", "<fieldset>", "<legend>"]},
+                    {"type": "code_contains_any", "expected": ["aria-", "role="]}
+                ]
+            },
+            {
+                "title": "CSS Variables Theme",
+                "task": "Create a page that uses CSS custom properties (variables) for colors. Define at least 4 variables in :root and use them throughout the page for background, text, borders, and accent colors.",
+                "xp": 70,
+                "testCases": [
+                    {"type": "code_contains", "expected": [":root", "--", "var("]},
+                    {"type": "code_count", "pattern": "--", "min": 4}
+                ]
+            },
+            {
+                "title": "Responsive Images",
+                "task": "Create a page with responsive images using <picture> element with multiple <source> tags for different screen sizes, and an <img> fallback. Include srcset and sizes attributes.",
+                "xp": 75,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<picture>", "<source", "<img"]},
+                    {"type": "code_contains_any", "expected": ["srcset", "media="]}
+                ]
+            },
+            {
+                "title": "Modal Dialog",
+                "task": "Create a modal/dialog using the HTML <dialog> element. Include an open button, close button, a heading, content text, and basic styling with backdrop.",
+                "xp": 80,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<dialog", "</dialog>"]},
+                    {"type": "code_contains_any", "expected": ["showModal", "::backdrop", "open"]}
+                ]
+            }
+        ],
+        "Advanced": [
+            {
+                "title": "CSS Grid Dashboard",
+                "task": "Build a dashboard layout with CSS Grid: sidebar, header, main content with 3 stat cards, and a footer. Use grid-template-areas for named layout regions.",
+                "xp": 120,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["display: grid", "grid-template-areas"]},
+                    {"type": "code_count", "pattern": "grid-area", "min": 3}
+                ]
+            },
+            {
+                "title": "Dark Mode Toggle",
+                "task": "Create a page with light and dark mode themes using CSS custom properties and a data attribute toggle (data-theme). Include styles for both themes and a toggle button with CSS transitions.",
+                "xp": 130,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["data-theme", ":root", "--", "var("]},
+                    {"type": "code_contains_any", "expected": ["transition", "prefers-color-scheme"]}
+                ]
+            },
+            {
+                "title": "CSS-Only Accordion",
+                "task": "Build an accordion/collapsible section using only HTML and CSS (no JavaScript). Use the <details>/<summary> elements or checkbox hack. Include at least 3 sections with smooth transitions.",
+                "xp": 110,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["<details>", "<summary>", "checkbox", ":checked"]},
+                    {"type": "code_contains", "expected": ["transition"]}
+                ]
+            },
+            {
+                "title": "Print Stylesheet",
+                "task": "Create a page with a separate print stylesheet using @media print. Hide navigation and sidebar for print, adjust fonts to serif, remove backgrounds, and show full URLs for links.",
+                "xp": 100,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["@media print", "display: none"]},
+                    {"type": "code_contains_any", "expected": ["content:", "serif"]}
+                ]
+            },
+            {
+                "title": "Responsive Email Template",
+                "task": "Create an HTML email template using table-based layout (for email client compatibility). Include inline styles, a header with logo area, content section, call-to-action button, and footer.",
+                "xp": 140,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<table", "style=", "width"]},
+                    {"type": "code_count", "pattern": "<table", "min": 2}
+                ]
+            },
+            {
+                "title": "SVG Inline Graphics",
+                "task": "Create a page with inline SVG graphics. Draw at least 3 shapes (circle, rect, path) with different fill colors, and add a text element and hover effects using CSS.",
+                "xp": 120,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<svg", "<circle", "<rect"]},
+                    {"type": "code_contains_any", "expected": ["<path", "<text", "<polygon"]},
+                    {"type": "code_contains", "expected": ["fill="]}
+                ]
+            },
+            {
+                "title": "CSS Scroll Snap Gallery",
+                "task": "Build a horizontal scroll-snap image gallery. Use scroll-snap-type and scroll-snap-align for smooth snapping between items. Include navigation dots or arrows.",
+                "xp": 130,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["scroll-snap-type", "scroll-snap-align"]},
+                    {"type": "code_contains_any", "expected": ["overflow", "scroll"]}
+                ]
+            },
+            {
+                "title": "Web Components Template",
+                "task": "Create an HTML page that uses the <template> and <slot> elements. Define a reusable card template and clone it to create at least 3 instances with different content.",
+                "xp": 150,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["<template", "<slot"]},
+                    {"type": "code_contains_any", "expected": ["cloneNode", "customElements", "shadow"]}
+                ]
+            }
+        ]
     }
 }
 
@@ -1514,6 +1754,27 @@ async def session_end(session_id: str, req: SessionEndRequest):
         if not doc.exists:
             raise HTTPException(status_code=404, detail="Session not found")
 
+        # Estimate skill level from session metrics
+        skill_level = "Beginner"
+        num_languages = len(req.languagesUsed) if req.languagesUsed else 0
+        num_files = len(req.filesEdited) if req.filesEdited else 0
+        advanced_langs = {"typescript", "rust", "go", "kotlin", "scala", "swift"}
+        intermediate_langs = {"javascript", "java", "csharp", "c#", "python", "ruby", "php"}
+
+        used_lower = [l.lower() for l in (req.languagesUsed or [])]
+        if any(l in advanced_langs for l in used_lower) or (num_languages >= 3 and num_files >= 5):
+            skill_level = "Advanced"
+        elif any(l in intermediate_langs for l in used_lower) or num_files >= 3 or req.totalKeystrokes > 500:
+            skill_level = "Intermediate"
+
+        # Calculate AI probability from typing patterns
+        cps = req.totalKeystrokes / (req.activeDuration + 1) if req.activeDuration else 0
+        ai_probability = 12.5
+        if cps > 5.0:
+            ai_probability = 85.0
+        elif cps > 3.0:
+            ai_probability = 45.0
+
         update_data = {
             "status": "completed",
             "endTime": firestore.SERVER_TIMESTAMP,
@@ -1525,6 +1786,14 @@ async def session_end(session_id: str, req: SessionEndRequest):
             "idleDuration": req.idleDuration,
             "filesEdited": req.filesEdited,
             "languagesUsed": req.languagesUsed,
+            "stats": {
+                "skillLevel": skill_level,
+                "duration": req.totalDuration,
+                "keystrokes": req.totalKeystrokes,
+                "aiProbability": ai_probability,
+                "filesCount": num_files,
+                "languageCount": num_languages,
+            }
         }
         doc_ref.update(update_data)
         return {"status": "success", "sessionId": session_id}
@@ -1544,6 +1813,7 @@ def _normalize_language(language: str) -> str:
         "javascript": "javascript", "js": "javascript", "typescript": "javascript", "ts": "javascript",
         "java": "java",
         "csharp": "csharp", "c#": "csharp", "cs": "csharp",
+        "html": "html", "htm": "html", "css": "html", "scss": "html", "sass": "html",
     }
     return lang_map.get(lang, lang)
 
