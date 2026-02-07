@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google.cloud.firestore_v1.base_query import FieldFilter
-from typing import Optional, List
+from typing import Optional, List, Union
 import os
 import joblib
 import random
@@ -1206,9 +1206,15 @@ import io
 import sys
 import re
 
-def validate_solution(code: str, quest_id: int) -> dict:
-    """Validate a solution against test cases for a quest."""
+def validate_solution(code: str, quest_id) -> dict:
+    """Validate a solution against test cases for a quest.
+    quest_id can be an int (hardcoded) or a string (Firestore doc ID).
+    """
     quest = ALL_QUESTS.get(quest_id)
+
+    # Also try integer lookup if quest_id is numeric
+    if not quest and isinstance(quest_id, (int, float)):
+        quest = ALL_QUESTS.get(int(quest_id))
 
     if not quest:
         return {"passed": False, "message": "Quest not found", "tests_passed": 0, "tests_total": 0}
@@ -1366,7 +1372,23 @@ class CodeSession(BaseModel):
     fileName: str
     duration: float
     keystrokes: int
-    questId: int = None  # Optional quest ID for validation
+    questId: Union[int, str, None] = None  # Quest ID (int for hardcoded, str for Firestore)
+
+class QuestCreateRequest(BaseModel):
+    title: str
+    task: str
+    xp: int
+    language: str
+    level: str  # "Beginner", "Intermediate", "Advanced"
+    testCases: List[dict] = []
+
+class QuestUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    task: Optional[str] = None
+    xp: Optional[int] = None
+    language: Optional[str] = None
+    level: Optional[str] = None
+    testCases: Optional[List[dict]] = None
 
 class SessionStartRequest(BaseModel):
     userId: str
@@ -1437,6 +1459,8 @@ async def session_start(req: SessionStartRequest):
             "email": req.email,
             "status": "active",
             "language": req.language,
+            "sessionType": "extension",
+            "timestamp": firestore.SERVER_TIMESTAMP,
             "startTime": firestore.SERVER_TIMESTAMP,
             "endTime": None,
             "totalKeystrokes": 0,
@@ -1510,31 +1534,55 @@ async def session_end(session_id: str, req: SessionEndRequest):
         print(f"Session end error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Quest Endpoints ---
+# --- Quest Endpoints (Firestore-backed with hardcoded fallback) ---
 
-@app.get("/get-quest/{skill_level}")
-async def get_quest(skill_level: str, language: Optional[str] = None):
-    """Returns a random challenge based on skill level and optional language.
-    If language is provided and has quests, returns a language-specific quest.
-    Otherwise falls back to Python quests.
-    """
+def _normalize_language(language: str) -> str:
+    """Normalize language name to a standard key."""
     lang = (language or "python").lower()
-
-    # Map common language names to our keys
     lang_map = {
         "python": "python", "py": "python",
         "javascript": "javascript", "js": "javascript", "typescript": "javascript", "ts": "javascript",
         "java": "java",
         "csharp": "csharp", "c#": "csharp", "cs": "csharp",
     }
-    lang = lang_map.get(lang, lang)
+    return lang_map.get(lang, lang)
 
-    # Get quests for this language and level
-    lang_quests = LANGUAGE_QUESTS.get(lang, LANGUAGE_QUESTS.get("python", {}))
-    quests = lang_quests.get(skill_level, lang_quests.get("Beginner", []))
+async def _get_quests_from_firestore(language: str, level: str) -> list:
+    """Fetch quests from Firestore for a given language and level."""
+    try:
+        quests_ref = db.collection("quests")
+        query = quests_ref.where(
+            filter=FieldFilter("language", "==", language)
+        ).where(
+            filter=FieldFilter("level", "==", level)
+        )
+        docs = query.stream()
+        quests = []
+        for doc in docs:
+            quest_data = doc.to_dict()
+            quest_data["id"] = doc.id
+            quests.append(quest_data)
+        return quests
+    except Exception as e:
+        print(f"Firestore quest fetch error: {e}")
+        return []
+
+@app.get("/get-quest/{skill_level}")
+async def get_quest(skill_level: str, language: Optional[str] = None):
+    """Returns a random challenge based on skill level and optional language.
+    Reads from Firestore first, falls back to hardcoded quests if Firestore is empty.
+    """
+    lang = _normalize_language(language)
+
+    # Try Firestore first
+    quests = await _get_quests_from_firestore(lang, skill_level)
+
+    # Fallback to hardcoded quests if Firestore has none
+    if not quests:
+        lang_quests = LANGUAGE_QUESTS.get(lang, LANGUAGE_QUESTS.get("python", {}))
+        quests = lang_quests.get(skill_level, lang_quests.get("Beginner", []))
 
     if not quests:
-        # Fallback to python
         quests = CHALLENGES.get(skill_level, CHALLENGES["Beginner"])
 
     quest = random.choice(quests)
@@ -1542,13 +1590,205 @@ async def get_quest(skill_level: str, language: Optional[str] = None):
 
 @app.get("/get-quest-languages")
 async def get_quest_languages():
-    """Returns the list of supported languages for quests."""
-    languages = []
-    for lang, levels in LANGUAGE_QUESTS.items():
-        total = sum(len(quests) for quests in levels.values())
-        if total > 0:
-            languages.append({"id": lang, "name": lang.capitalize(), "questCount": total})
+    """Returns the list of supported languages for quests (from Firestore + hardcoded)."""
+    language_counts = {}
+
+    # Count from Firestore
+    try:
+        quests_ref = db.collection("quests").stream()
+        for doc in quests_ref:
+            data = doc.to_dict()
+            lang = data.get("language", "python")
+            language_counts[lang] = language_counts.get(lang, 0) + 1
+    except Exception as e:
+        print(f"Error fetching quest languages from Firestore: {e}")
+
+    # If Firestore is empty, use hardcoded data
+    if not language_counts:
+        for lang, levels in LANGUAGE_QUESTS.items():
+            total = sum(len(quests) for quests in levels.values())
+            if total > 0:
+                language_counts[lang] = total
+
+    languages = [
+        {"id": lang, "name": lang.capitalize(), "questCount": count}
+        for lang, count in language_counts.items()
+    ]
     return {"languages": languages}
+
+# --- Quest Admin CRUD ---
+
+@app.post("/admin/quests/seed")
+async def seed_quests():
+    """Seed Firestore with the hardcoded quests. Skips quests that already exist."""
+    try:
+        seeded = 0
+        skipped = 0
+
+        for lang, levels in LANGUAGE_QUESTS.items():
+            for level, quests in levels.items():
+                for quest in quests:
+                    # Use a deterministic doc ID based on language + quest title
+                    doc_id = f"{lang}_{quest['title'].lower().replace(' ', '_')}"
+                    doc_ref = db.collection("quests").document(doc_id)
+
+                    if doc_ref.get().exists:
+                        skipped += 1
+                        continue
+
+                    doc_data = {
+                        "title": quest["title"],
+                        "task": quest["task"],
+                        "xp": quest["xp"],
+                        "language": lang,
+                        "level": level,
+                        "testCases": quest.get("testCases", []),
+                        "createdAt": firestore.SERVER_TIMESTAMP,
+                    }
+                    doc_ref.set(doc_data)
+                    seeded += 1
+
+        # Also rebuild ALL_QUESTS lookup from Firestore
+        _rebuild_quest_lookup()
+
+        return {"status": "success", "seeded": seeded, "skipped": skipped}
+    except Exception as e:
+        print(f"Quest seed error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/quests")
+async def list_quests(language: Optional[str] = None, level: Optional[str] = None):
+    """List all quests, optionally filtered by language and/or level."""
+    try:
+        quests_ref = db.collection("quests")
+
+        # Apply filters
+        if language:
+            quests_ref = quests_ref.where(filter=FieldFilter("language", "==", _normalize_language(language)))
+        if level:
+            quests_ref = quests_ref.where(filter=FieldFilter("level", "==", level))
+
+        docs = quests_ref.stream()
+        quests = []
+        for doc in docs:
+            quest_data = doc.to_dict()
+            quest_data["id"] = doc.id
+            quests.append(quest_data)
+
+        # Sort by language then level
+        level_order = {"Beginner": 0, "Intermediate": 1, "Advanced": 2}
+        quests.sort(key=lambda q: (q.get("language", ""), level_order.get(q.get("level", ""), 9)))
+
+        return {"quests": quests, "total": len(quests)}
+    except Exception as e:
+        print(f"List quests error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/admin/quests")
+async def create_quest(req: QuestCreateRequest):
+    """Create a new quest in Firestore."""
+    try:
+        lang = _normalize_language(req.language)
+        doc_id = f"{lang}_{req.title.lower().replace(' ', '_')}"
+        doc_ref = db.collection("quests").document(doc_id)
+
+        if doc_ref.get().exists:
+            raise HTTPException(status_code=409, detail="A quest with this title already exists for this language")
+
+        doc_data = {
+            "title": req.title,
+            "task": req.task,
+            "xp": req.xp,
+            "language": lang,
+            "level": req.level,
+            "testCases": req.testCases,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        }
+        doc_ref.set(doc_data)
+
+        _rebuild_quest_lookup()
+
+        return {"status": "success", "id": doc_id, "quest": {**doc_data, "id": doc_id}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Create quest error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/admin/quests/{quest_id}")
+async def update_quest(quest_id: str, req: QuestUpdateRequest):
+    """Update an existing quest in Firestore."""
+    try:
+        doc_ref = db.collection("quests").document(quest_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Quest not found")
+
+        update_data = {}
+        if req.title is not None:
+            update_data["title"] = req.title
+        if req.task is not None:
+            update_data["task"] = req.task
+        if req.xp is not None:
+            update_data["xp"] = req.xp
+        if req.language is not None:
+            update_data["language"] = _normalize_language(req.language)
+        if req.level is not None:
+            update_data["level"] = req.level
+        if req.testCases is not None:
+            update_data["testCases"] = req.testCases
+
+        if update_data:
+            update_data["updatedAt"] = firestore.SERVER_TIMESTAMP
+            doc_ref.update(update_data)
+
+        _rebuild_quest_lookup()
+
+        updated = doc_ref.get().to_dict()
+        updated["id"] = quest_id
+        return {"status": "success", "quest": updated}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Update quest error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/admin/quests/{quest_id}")
+async def delete_quest(quest_id: str):
+    """Delete a quest from Firestore."""
+    try:
+        doc_ref = db.collection("quests").document(quest_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Quest not found")
+
+        doc_ref.delete()
+        _rebuild_quest_lookup()
+
+        return {"status": "success", "deleted": quest_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Delete quest error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def _rebuild_quest_lookup():
+    """Rebuild the ALL_QUESTS lookup dict by merging hardcoded + Firestore data."""
+    global ALL_QUESTS
+    try:
+        # Start with hardcoded quests (integer keys)
+        merged = dict(ALL_QUESTS)
+
+        # Add Firestore quests (string keys)
+        docs = db.collection("quests").stream()
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            merged[doc.id] = data
+
+        ALL_QUESTS = merged
+    except Exception as e:
+        print(f"Rebuild quest lookup error: {e}")
 
 # --- Code Analysis ---
 
@@ -1586,8 +1826,10 @@ async def analyze_code(session: CodeSession):
             "email": session.email,
             "code": session.code,
             "language": session.language,
+            "fileName": session.fileName,
             "questId": session.questId,
             "timestamp": firestore.SERVER_TIMESTAMP,
+            "sessionType": "quest",
             "stats": {
                 "duration": session.duration,
                 "keystrokes": session.keystrokes,

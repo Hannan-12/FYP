@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom"; // Added navigate
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
-import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, getDocs } from "firebase/firestore";
 import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
@@ -39,57 +39,79 @@ const UserDashboard = () => {
       return;
     }
 
-    console.log("📊 Dashboard: Fetching sessions for user:", user.uid);
+    const processSessionData = (data) => {
+      setSessions(data);
 
-    const q = query(
-      collection(db, "sessions"),
-      where("userId", "==", user.uid),
-      orderBy("timestamp", "desc")
-    );
+      if (data.length > 0) {
+        // Filter to sessions that have stats (quest sessions)
+        const questSessions = data.filter(s => s.stats);
+        const avgAcc = questSessions.length > 0
+          ? 100 - (questSessions.reduce((acc, curr) => acc + (curr.stats?.aiProbability || 0), 0) / questSessions.length)
+          : 100;
+        setStats({
+          total: data.length,
+          accuracy: Math.round(avgAcc),
+          skill: questSessions[0]?.stats?.skillLevel || "N/A"
+        });
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        console.log(`✅ Dashboard: Loaded ${data.length} sessions`);
-        setSessions(data);
+        const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
+        questSessions.forEach(s => {
+          const level = s.stats?.skillLevel || "Beginner";
+          if (skills[level] !== undefined) skills[level]++;
+        });
 
-        if (data.length > 0) {
-          const avgAcc = 100 - (data.reduce((acc, curr) => acc + (curr.stats?.aiProbability || 0), 0) / data.length);
-          setStats({
-            total: data.length,
-            accuracy: Math.round(avgAcc),
-            skill: data[0].stats?.skillLevel || "N/A"
-          });
+        const formattedData = [
+          { name: "Beginner", value: skills.Beginner },
+          { name: "Intermediate", value: skills.Intermediate },
+          { name: "Advanced", value: skills.Advanced }
+        ].filter(item => item.value > 0);
 
-          const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
-          data.forEach(s => {
-            const level = s.stats?.skillLevel || "Beginner";
-            if (skills[level] !== undefined) skills[level]++;
-          });
-
-          const formattedData = [
-            { name: "Beginner", value: skills.Beginner },
-            { name: "Intermediate", value: skills.Intermediate },
-            { name: "Advanced", value: skills.Advanced }
-          ].filter(item => item.value > 0);
-
-          setChartData(formattedData);
-        } else {
-          console.log("ℹ️ Dashboard: No sessions found. Complete quests to populate data.");
-        }
-      },
-      (error) => {
-        console.error("❌ Dashboard: Error fetching sessions:", error);
-        if (error.code === 'permission-denied') {
-          console.error("🔒 Permission denied. Check Firestore security rules.");
-        } else if (error.code === 'failed-precondition') {
-          console.error("📑 Missing Firestore index. Check Firebase console for index creation link.");
-        }
+        setChartData(formattedData);
       }
-    );
+    };
 
-    return () => unsubscribe();
+    // Try realtime listener with orderBy first
+    let unsubscribe;
+    try {
+      const q = query(
+        collection(db, "sessions"),
+        where("userId", "==", user.uid),
+        orderBy("timestamp", "desc")
+      );
+
+      unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          processSessionData(data);
+        },
+        async (error) => {
+          console.warn("Dashboard: onSnapshot failed, falling back to getDocs:", error.code);
+          // Fallback: fetch without ordering (if composite index doesn't exist)
+          try {
+            const simpleQuery = query(
+              collection(db, "sessions"),
+              where("userId", "==", user.uid)
+            );
+            const snapshot = await getDocs(simpleQuery);
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // Sort manually on client side
+            data.sort((a, b) => {
+              const timeA = a.timestamp?.seconds || a.startTime?.seconds || 0;
+              const timeB = b.timestamp?.seconds || b.startTime?.seconds || 0;
+              return timeB - timeA;
+            });
+            processSessionData(data);
+          } catch (fallbackError) {
+            console.error("Dashboard: Fallback query also failed:", fallbackError);
+          }
+        }
+      );
+    } catch (error) {
+      console.error("Dashboard: Failed to set up listener:", error);
+    }
+
+    return () => { if (unsubscribe) unsubscribe(); };
   }, [user]);
 
   const COLORS = ["#94a3b8", "#3b82f6", "#10b981"];
@@ -142,9 +164,13 @@ const UserDashboard = () => {
               sessions.map((session) => (
                 <div key={session.id} className="p-4 hover:bg-slate-700/30 transition flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-slate-200 capitalize">{session.language} Practice</p>
+                    <p className="font-medium text-slate-200 capitalize">
+                      {session.fileName?.replace(/\.\w+$/, '') || session.language || "Unknown"} {session.sessionType === "extension" ? "Session" : "Practice"}
+                    </p>
                     <p className="text-xs text-slate-500">
-                      {session.timestamp ? new Date(session.timestamp.seconds * 1000).toLocaleString() : "Just now"}
+                      {(session.timestamp || session.startTime)
+                        ? new Date((session.timestamp?.seconds || session.startTime?.seconds) * 1000).toLocaleString()
+                        : "Just now"}
                     </p>
                   </div>
                   <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">

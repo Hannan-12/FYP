@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../../firebase/config";
-import { collection, onSnapshot, query, orderBy, limit } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, limit, getDocs } from "firebase/firestore";
 import { Users, Code, Brain, AlertTriangle, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -31,22 +31,44 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState({ totalStudents: 0, totalSessions: 0, aiDetections: 0, criticalFlags: 0 });
 
   useEffect(() => {
-    const q = query(collection(db, "sessions"), orderBy("timestamp", "desc"), limit(20));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const sessionData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const processData = (sessionData) => {
       setSessions(sessionData);
-      
       const aiCount = sessionData.filter(s => s.stats?.aiProbability > 50).length;
       const flags = sessionData.filter(s => s.stats?.aiProbability > 80).length;
 
       setStats({
-        totalStudents: 12, 
+        totalStudents: new Set(sessionData.map(s => s.userId)).size,
         totalSessions: sessionData.length,
         aiDetections: aiCount,
         criticalFlags: flags
       });
       setLoading(false);
-    });
+    };
+
+    const q = query(collection(db, "sessions"), orderBy("timestamp", "desc"), limit(20));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const sessionData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        processData(sessionData);
+      },
+      async (error) => {
+        console.warn("Admin dashboard: onSnapshot failed, using fallback:", error.code);
+        try {
+          const snapshot = await getDocs(collection(db, "sessions"));
+          const sessionData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          sessionData.sort((a, b) => {
+            const timeA = a.timestamp?.seconds || a.startTime?.seconds || 0;
+            const timeB = b.timestamp?.seconds || b.startTime?.seconds || 0;
+            return timeB - timeA;
+          });
+          processData(sessionData.slice(0, 20));
+        } catch (fallbackError) {
+          console.error("Admin dashboard fallback failed:", fallbackError);
+          setLoading(false);
+        }
+      }
+    );
     return () => unsubscribe();
   }, []);
 
