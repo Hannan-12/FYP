@@ -218,15 +218,13 @@ const MySessions = () => {
                       </span>
                     </div>
 
-                    {!isExtension && (
+                    {session.stats?.aiProbability != null && (
                       <div className="text-right">
                         <p className="text-xs text-slate-500">Authenticity</p>
                         <span className={`text-lg font-bold ${
                           (session.stats?.aiProbability || 0) > 50 ? 'text-red-400' : 'text-green-400'
                         }`}>
-                          {session.stats?.aiProbability != null
-                            ? `${(100 - session.stats.aiProbability).toFixed(0)}%`
-                            : "N/A"}
+                          {`${(100 - session.stats.aiProbability).toFixed(0)}%`}
                         </span>
                       </div>
                     )}

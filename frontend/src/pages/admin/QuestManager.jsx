@@ -9,6 +9,7 @@ const LANGUAGES = [
   { id: "javascript", name: "JavaScript" },
   { id: "java", name: "Java" },
   { id: "csharp", name: "C#" },
+  { id: "html", name: "HTML/CSS" },
 ];
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced"];
