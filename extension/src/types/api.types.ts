@@ -109,6 +109,50 @@ export interface UserVerifyResponse {
 }
 
 /**
+ * Persistent session start request
+ */
+export interface SessionStartRequest {
+  userId: string;
+  email: string;
+  language?: string;
+}
+
+/**
+ * Persistent session start response
+ */
+export interface SessionStartResponse {
+  status: string;
+  sessionId: string;
+}
+
+/**
+ * Persistent session update request
+ */
+export interface SessionUpdateRequest {
+  totalKeystrokes: number;
+  totalPastes: number;
+  totalEdits: number;
+  activeDuration: number;
+  idleDuration: number;
+  filesEdited: string[];
+  languagesUsed: string[];
+}
+
+/**
+ * Persistent session end request
+ */
+export interface SessionEndRequest {
+  totalKeystrokes: number;
+  totalPastes: number;
+  totalEdits: number;
+  totalDuration: number;
+  activeDuration: number;
+  idleDuration: number;
+  filesEdited: string[];
+  languagesUsed: string[];
+}
+
+/**
  * AI Detection response (from backend)
  */
 export interface AIDetectionResponse {
