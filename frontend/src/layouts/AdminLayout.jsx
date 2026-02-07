@@ -1,6 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { LayoutDashboard, Users, Activity, LogOut, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Users, Activity, LogOut, ShieldCheck, Book } from "lucide-react";
 import { motion } from "framer-motion";
 
 const AdminLayout = () => {
@@ -56,6 +56,7 @@ const AdminLayout = () => {
         <nav className="flex-1 px-3">
           <NavItem to="/admin/dashboard" icon={LayoutDashboard} label="Dashboard" />
           <NavItem to="/admin/students" icon={Users} label="Students" />
+          <NavItem to="/admin/quests" icon={Book} label="Quests" />
           <NavItem to="/admin/analytics" icon={Activity} label="Analytics" />
         </nav>
 
