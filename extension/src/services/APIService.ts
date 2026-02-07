@@ -9,7 +9,11 @@ import {
   AIDetectionResponse,
   CodeSessionRequest,
   AnalyzeResponse,
-  UserVerifyResponse
+  UserVerifyResponse,
+  SessionStartRequest,
+  SessionStartResponse,
+  SessionUpdateRequest,
+  SessionEndRequest
 } from '../types';
 import { CodeFeatures } from '../types/tracking.types';
 
@@ -88,6 +92,56 @@ export class APIService {
   }
 
   /**
+   * Start a persistent session in the backend.
+   * Creates ONE Firestore session document that persists until stopped.
+   */
+  async startSession(request: SessionStartRequest): Promise<SessionStartResponse | null> {
+    try {
+      Logger.info('Starting persistent session in backend', { userId: request.userId });
+      const response = await this.post<SessionStartResponse>('/session/start', request);
+      if (response) {
+        Logger.info('Persistent session started', { sessionId: response.sessionId });
+      }
+      return response;
+    } catch (error) {
+      Logger.error('Failed to start persistent session', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update a persistent session with latest metrics.
+   * Called periodically (every 30s) to sync data to Firestore.
+   */
+  async updateSession(sessionId: string, data: SessionUpdateRequest): Promise<boolean> {
+    try {
+      const response = await this.put<{ status: string }>(`/session/${sessionId}/update`, data);
+      return response !== null;
+    } catch (error) {
+      Logger.error('Failed to update persistent session', error);
+      return false;
+    }
+  }
+
+  /**
+   * End a persistent session.
+   * Called when user stops tracking or exits VS Code.
+   */
+  async endSession(sessionId: string, data: SessionEndRequest): Promise<boolean> {
+    try {
+      Logger.info('Ending persistent session', { sessionId });
+      const response = await this.post<{ status: string }>(`/session/${sessionId}/end`, data);
+      if (response) {
+        Logger.info('Persistent session ended', { sessionId });
+      }
+      return response !== null;
+    } catch (error) {
+      Logger.error('Failed to end persistent session', error);
+      return false;
+    }
+  }
+
+  /**
    * Send code features to backend for AI detection analysis
    * Legacy method - use analyzeCode for new implementations
    *
@@ -149,6 +203,48 @@ export class APIService {
         headers: {
           'Content-Type': 'application/json',
           // Add auth token if available
+          ...(this.auth.isAuthenticated() && {
+            'Authorization': `Bearer ${await this.auth.getToken()}`
+          })
+        },
+        body: JSON.stringify(data),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        Logger.error(`API error: ${response.status}`, errorText);
+        return null;
+      }
+
+      return await response.json() as T;
+
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        Logger.error('Request timed out', { url, timeout: this.timeout });
+      } else {
+        Logger.error('Network error', { url, error: error.message });
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Make a PUT request to the backend
+   */
+  private async put<T>(endpoint: string, data: any): Promise<T | null> {
+    const url = `${this.baseUrl}${endpoint}`;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
           ...(this.auth.isAuthenticated() && {
             'Authorization': `Bearer ${await this.auth.getToken()}`
           })

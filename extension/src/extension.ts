@@ -8,7 +8,7 @@ import { APIService } from './services/APIService';
 import { Logger, LogLevel } from './utils/logger';
 import { LanguageDetector } from './utils/languageDetector';
 import { registerAuthCommands } from './commands/authCommands';
-import { CodeSessionRequest } from './types';
+import { CodeSessionRequest, SessionUpdateRequest, SessionEndRequest } from './types';
 
 /**
  * Global services
@@ -19,6 +19,13 @@ let trackingService: TrackingService;
 let authService: AuthService;
 let apiService: APIService;
 let statusBar: vscode.StatusBarItem;
+
+/**
+ * Persistent session state - ONE session per tracking period
+ */
+let backendSessionId: string | null = null;
+let sessionSyncTimer: NodeJS.Timeout | undefined;
+const SESSION_SYNC_INTERVAL = 30000; // Sync to backend every 30 seconds
 
 /**
  * Extension activation
@@ -84,79 +91,6 @@ export function activate(context: vscode.ExtensionContext) {
       dispose: () => clearInterval(statusBarTimer)
     });
 
-    // Register file save listener for automatic code analysis
-    const saveListener = vscode.workspace.onDidSaveTextDocument(async (document) => {
-      // Only analyze if tracking is running and user is authenticated
-      if (!trackingService.isRunning() || !authService.isAuthenticated()) {
-        return;
-      }
-
-      const user = authService.getCurrentUser();
-      const session = trackingService.getSession();
-
-      if (!user || !session) {
-        return;
-      }
-
-      // Get the code and file info
-      const code = document.getText();
-      const fileName = document.fileName;
-      const language = LanguageDetector.detectLanguage(fileName);
-
-      // Skip non-code files
-      if (!LanguageDetector.isCodeFile(fileName)) {
-        Logger.debug(`Skipping non-code file: ${fileName}`);
-        return;
-      }
-
-      // Skip very small files
-      if (code.split('\n').length < 5) {
-        Logger.debug(`Skipping small file: ${fileName}`);
-        return;
-      }
-
-      // Calculate duration since session started
-      const duration = (Date.now() - session.startTime) / 1000; // seconds
-      const keystrokes = trackingService.getKeystrokeCount();
-
-      // Build the request matching backend's CodeSession model
-      const request: CodeSessionRequest = {
-        userId: user.uid,
-        email: user.email || '',
-        code: code,
-        language: language,
-        fileName: fileName.split('/').pop() || fileName, // Just the filename, not full path
-        duration: duration,
-        keystrokes: keystrokes
-      };
-
-      Logger.info(`Submitting code for analysis: ${fileName}`, {
-        language,
-        codeLength: code.length,
-        duration,
-        keystrokes
-      });
-
-      // Send to backend for analysis
-      const result = await apiService.analyzeCode(request);
-
-      if (result) {
-        Logger.info(`Analysis result for ${fileName}`, {
-          skillLevel: result.stats.skillLevel,
-          confidence: result.stats.confidence,
-          aiProbability: result.stats.aiProbability
-        });
-
-        // Show notification if AI probability is high
-        if (result.stats.aiProbability > 70) {
-          vscode.window.showWarningMessage(
-            `⚠️ High AI detection (${result.stats.aiProbability.toFixed(1)}%) for ${fileName.split('/').pop()}`
-          );
-        }
-      }
-    });
-    context.subscriptions.push(saveListener);
-
     Logger.info('DevSkill-Tracker: commands registered');
     console.log('DevSkill-Tracker: activated successfully');
   } catch (error) {
@@ -166,16 +100,141 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 /**
+ * Start a persistent backend session (ONE session per tracking period).
+ * Called when user starts tracking.
+ */
+async function startBackendSession(): Promise<void> {
+  if (!authService.isAuthenticated()) {
+    return;
+  }
+
+  const user = authService.getCurrentUser();
+  if (!user) {
+    return;
+  }
+
+  // Detect current language from active editor
+  const activeEditor = vscode.window.activeTextEditor;
+  const language = activeEditor
+    ? LanguageDetector.detectLanguage(activeEditor.document.fileName)
+    : undefined;
+
+  const result = await apiService.startSession({
+    userId: user.uid,
+    email: user.email || '',
+    language: language
+  });
+
+  if (result) {
+    backendSessionId = result.sessionId;
+    Logger.info('Backend session started', { sessionId: backendSessionId });
+
+    // Start periodic sync timer
+    sessionSyncTimer = setInterval(() => syncSessionToBackend(), SESSION_SYNC_INTERVAL);
+  } else {
+    Logger.warn('Failed to start backend session - will track locally only');
+  }
+}
+
+/**
+ * Sync current session metrics to the backend.
+ * Called every 30 seconds while tracking is active.
+ */
+async function syncSessionToBackend(): Promise<void> {
+  if (!backendSessionId || !trackingService.isRunning()) {
+    return;
+  }
+
+  const session = trackingService.getSession();
+  const fileMetrics = trackingService.getFileMetrics();
+  if (!session) {
+    return;
+  }
+
+  // Calculate aggregate metrics from file metrics
+  let totalPastes = session.totalPastes || 0;
+  let totalEdits = session.totalEdits || 0;
+  let activeDuration = 0;
+  let idleDuration = 0;
+
+  for (const fm of Object.values(fileMetrics)) {
+    activeDuration += fm.activeTimeMs || 0;
+    idleDuration += fm.idleTimeMs || 0;
+  }
+
+  const updateData: SessionUpdateRequest = {
+    totalKeystrokes: trackingService.getKeystrokeCount(),
+    totalPastes: totalPastes,
+    totalEdits: totalEdits,
+    activeDuration: activeDuration / 1000,
+    idleDuration: idleDuration / 1000,
+    filesEdited: session.filesEdited || [],
+    languagesUsed: session.languagesUsed || []
+  };
+
+  const success = await apiService.updateSession(backendSessionId, updateData);
+  if (success) {
+    Logger.debug('Session synced to backend');
+  }
+}
+
+/**
+ * End the persistent backend session.
+ * Called when user stops tracking or exits VS Code.
+ */
+async function endBackendSession(): Promise<void> {
+  // Stop sync timer
+  if (sessionSyncTimer) {
+    clearInterval(sessionSyncTimer);
+    sessionSyncTimer = undefined;
+  }
+
+  if (!backendSessionId) {
+    return;
+  }
+
+  const session = trackingService.getSession();
+  const fileMetrics = trackingService.getFileMetrics();
+
+  let activeDuration = 0;
+  let idleDuration = 0;
+  for (const fm of Object.values(fileMetrics)) {
+    activeDuration += fm.activeTimeMs || 0;
+    idleDuration += fm.idleTimeMs || 0;
+  }
+
+  const endData: SessionEndRequest = {
+    totalKeystrokes: trackingService.getKeystrokeCount(),
+    totalPastes: session?.totalPastes || 0,
+    totalEdits: session?.totalEdits || 0,
+    totalDuration: session ? (Date.now() - session.startTime) / 1000 : 0,
+    activeDuration: activeDuration / 1000,
+    idleDuration: idleDuration / 1000,
+    filesEdited: session?.filesEdited || [],
+    languagesUsed: session?.languagesUsed || []
+  };
+
+  const success = await apiService.endSession(backendSessionId, endData);
+  if (success) {
+    Logger.info('Backend session ended', { sessionId: backendSessionId });
+  }
+
+  backendSessionId = null;
+}
+
+/**
  * Register all commands
  */
 function registerCommands(context: vscode.ExtensionContext) {
   // Start tracking command
   const startCmd = vscode.commands.registerCommand(
     'devskill-tracker.startTracking',
-    () => {
+    async () => {
       try {
         trackingService.start();
         updateStatusBar();
+        // Start persistent backend session
+        await startBackendSession();
       } catch (error) {
         Logger.error('Failed to start tracking', error);
         vscode.window.showErrorMessage(`Failed to start tracking: ${error}`);
@@ -186,8 +245,10 @@ function registerCommands(context: vscode.ExtensionContext) {
   // Stop tracking command
   const stopCmd = vscode.commands.registerCommand(
     'devskill-tracker.stopTracking',
-    () => {
+    async () => {
       try {
+        // End persistent backend session first (while session data still exists)
+        await endBackendSession();
         trackingService.stop();
         updateStatusBar();
       } catch (error) {
@@ -297,7 +358,7 @@ function registerCommands(context: vscode.ExtensionContext) {
           ].join(' | ');
 
           if (result.stats.aiProbability > 70) {
-            vscode.window.showWarningMessage(`⚠️ High AI Detection! ${summary}`);
+            vscode.window.showWarningMessage(`High AI Detection! ${summary}`);
           } else {
             vscode.window.showInformationMessage(`Analysis: ${summary}`);
           }
@@ -348,7 +409,7 @@ function updateStatusBar() {
   statusBar.text = `$(pulse) DevSkill: ${min}m ${sec}s${idleSuffix}`;
 
   const keystrokeCount = trackingService.getKeystrokeCount();
-  statusBar.tooltip = `${userDisplay}\nRunning — Keystrokes: ${keystrokeCount}\nClick to stop tracking`;
+  statusBar.tooltip = `${userDisplay}\nRunning | Keystrokes: ${keystrokeCount}\nClick to stop tracking`;
   statusBar.command = 'devskill-tracker.stopTracking';
 }
 
@@ -375,6 +436,11 @@ function showCollectedData() {
   }
   channel.appendLine('');
 
+  // Backend session info
+  channel.appendLine('=== Backend Session ===');
+  channel.appendLine(`Backend Session ID: ${backendSessionId || 'None'}`);
+  channel.appendLine('');
+
   // Events
   channel.appendLine(`=== Events (${events.length} total) ===`);
   channel.appendLine(JSON.stringify(events, null, 2));
@@ -397,9 +463,14 @@ function showCollectedData() {
 /**
  * Extension deactivation
  */
-export function deactivate() {
+export async function deactivate() {
   console.log('DevSkill-Tracker: deactivating');
   Logger.info('DevSkill-Tracker extension deactivating');
+
+  // End backend session before deactivation (user exiting VS Code)
+  if (backendSessionId) {
+    await endBackendSession();
+  }
 
   if (trackingService) {
     trackingService.dispose();

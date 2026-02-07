@@ -4,19 +4,21 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google.cloud.firestore_v1.base_query import FieldFilter
+from typing import Optional, List
 import os
 import joblib
 import random
+import uuid
 
 cred_path = "firebase_config/serviceAccountKey.json"
 
 if not os.path.exists(cred_path):
-    print(f"❌ Error: Cannot find {cred_path}")
+    print(f"Error: Cannot find {cred_path}")
 else:
     if not firebase_admin._apps:
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
-    print("✅ Firebase Admin Connected")
+    print("Firebase Admin Connected")
 
 db = firestore.client()
 app = FastAPI(title="DevSkill Tracker API", version="1.0.0")
@@ -41,17 +43,17 @@ app.add_middleware(
 ai_model = None
 try:
     ai_model = joblib.load("ai_models/skill_classifier.pkl")
-    print("🧠 AI Model Loaded Successfully")
+    print("AI Model Loaded Successfully")
 except Exception as e:
     try:
         ai_model = joblib.load("skill_classifier.pkl")
-        print("🧠 AI Model Loaded Successfully (from root)")
+        print("AI Model Loaded Successfully (from root)")
     except FileNotFoundError:
-        print(f"⚠️ Warning: AI Model not found. ({e})")
+        print(f"Warning: AI Model not found. ({e})")
     except Exception as ex:
-        print(f"⚠️ Warning: AI Model loading failed. ({ex})")
+        print(f"Warning: AI Model loading failed. ({ex})")
 
-# --- Gamified Quests Data with Test Cases ---
+# --- Gamified Quests Data with Test Cases (Python - original) ---
 CHALLENGES = {
     "Beginner": [
         {
@@ -381,6 +383,824 @@ CHALLENGES = {
     ]
 }
 
+# --- Multi-Language Quest Templates ---
+# Quests are generated dynamically based on language + skill level.
+# Each language has templates per difficulty that use language-appropriate syntax/concepts.
+
+LANGUAGE_QUESTS = {
+    "javascript": {
+        "Beginner": [
+            {
+                "title": "Loop Logic",
+                "task": "Print numbers 1 to 10 using a for loop. Use console.log() for output.",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for"]},
+                    {"type": "code_contains_any", "expected": ["console.log", "console.info"]}
+                ]
+            },
+            {
+                "title": "Arrow Function Sum",
+                "task": "Create an arrow function called 'add' that takes two numbers and returns their sum.",
+                "xp": 45,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["=>"]},
+                    {"type": "code_contains_any", "expected": ["const add", "let add", "var add"]}
+                ]
+            },
+            {
+                "title": "Even or Odd",
+                "task": "Write a function 'isEven' that returns true if a number is even, false otherwise.",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["%", "2"]},
+                    {"type": "code_contains_any", "expected": ["function", "=>"]}
+                ]
+            },
+            {
+                "title": "String Reversal",
+                "task": "Write a function 'reverseString' that reverses a string without using .reverse().",
+                "xp": 60,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["function", "=>"]},
+                    {"type": "code_not_contains", "expected": [".reverse()"]}
+                ]
+            },
+            {
+                "title": "Array Max",
+                "task": "Find the maximum number in an array without using Math.max().",
+                "xp": 55,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["for", "forEach", "reduce"]},
+                    {"type": "code_not_contains", "expected": ["Math.max"]}
+                ]
+            },
+            {
+                "title": "FizzBuzz",
+                "task": "Print numbers 1-100. Print 'Fizz' for multiples of 3, 'Buzz' for 5, 'FizzBuzz' for both.",
+                "xp": 70,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["%"]},
+                    {"type": "code_contains_any", "expected": ["Fizz", "Buzz"]}
+                ]
+            },
+            {
+                "title": "Template Literals",
+                "task": "Create a function 'greet' that takes a name and returns 'Hello, {name}!' using template literals.",
+                "xp": 40,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["`", "${"]},
+                    {"type": "code_contains_any", "expected": ["function", "=>"]}
+                ]
+            },
+            {
+                "title": "Array Filter",
+                "task": "Filter an array to keep only numbers greater than 10 using the filter method.",
+                "xp": 55,
+                "testCases": [
+                    {"type": "code_contains", "expected": [".filter("]},
+                    {"type": "code_contains_any", "expected": ["=>", "function"]}
+                ]
+            },
+            {
+                "title": "Object Destructuring",
+                "task": "Given an object with 'name' and 'age' properties, use destructuring to extract them into variables.",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["{", "}", "="]},
+                    {"type": "code_contains_any", "expected": ["name", "age"]}
+                ]
+            },
+            {
+                "title": "Vowel Counter",
+                "task": "Write a function 'countVowels' that counts the number of vowels in a string.",
+                "xp": 60,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["aeiou", "AEIOU", "match", "includes"]},
+                    {"type": "code_contains_any", "expected": ["function", "=>"]}
+                ]
+            }
+        ],
+        "Intermediate": [
+            {
+                "title": "Promise Chain",
+                "task": "Create a function that returns a Promise which resolves with 'Hello' after a delay.",
+                "xp": 110,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["Promise", "resolve"]},
+                    {"type": "code_contains_any", "expected": ["setTimeout", "then", "async"]}
+                ]
+            },
+            {
+                "title": "Array Reduce",
+                "task": "Use reduce to calculate the sum of all numbers in an array.",
+                "xp": 100,
+                "testCases": [
+                    {"type": "code_contains", "expected": [".reduce("]},
+                    {"type": "code_contains_any", "expected": ["=>", "function"]}
+                ]
+            },
+            {
+                "title": "Closure Counter",
+                "task": "Create a counter function using closures that returns an object with increment, decrement, and getCount methods.",
+                "xp": 120,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["function", "return"]},
+                    {"type": "code_contains_any", "expected": ["increment", "decrement", "getCount"]}
+                ]
+            },
+            {
+                "title": "Array Flat",
+                "task": "Flatten a nested array (e.g., [[1,2],[3,[4,5]]]) into a single-level array without using .flat().",
+                "xp": 125,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["function", "=>"]},
+                    {"type": "code_not_contains", "expected": [".flat("]}
+                ]
+            },
+            {
+                "title": "Debounce Function",
+                "task": "Implement a debounce function that delays invoking a function until after a wait period.",
+                "xp": 130,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["setTimeout", "clearTimeout"]},
+                    {"type": "code_contains_any", "expected": ["function", "=>"]}
+                ]
+            },
+            {
+                "title": "Deep Clone",
+                "task": "Write a function that creates a deep clone of an object (handle nested objects and arrays).",
+                "xp": 135,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["typeof", "Array.isArray", "Object"]},
+                    {"type": "code_not_contains", "expected": ["JSON.parse(JSON.stringify"]}
+                ]
+            },
+            {
+                "title": "Event Emitter",
+                "task": "Create a simple EventEmitter class with on, off, and emit methods.",
+                "xp": 130,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class"]},
+                    {"type": "code_contains_any", "expected": ["on(", "emit(", "off("]}
+                ]
+            },
+            {
+                "title": "Async/Await Fetch",
+                "task": "Write an async function that fetches data from a URL and handles errors with try/catch.",
+                "xp": 115,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["async", "await"]},
+                    {"type": "code_contains_any", "expected": ["try", "catch", "fetch"]}
+                ]
+            },
+            {
+                "title": "Memoize Function",
+                "task": "Create a memoize function that caches the results of expensive function calls.",
+                "xp": 125,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["Map", "cache", "{}"]},
+                    {"type": "code_contains", "expected": ["return"]}
+                ]
+            },
+            {
+                "title": "Binary Search",
+                "task": "Implement the binary search algorithm on a sorted array.",
+                "xp": 130,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["while"]},
+                    {"type": "code_contains_any", "expected": ["mid", "middle", "Math.floor"]}
+                ]
+            }
+        ],
+        "Advanced": [
+            {
+                "title": "Custom Promise.all",
+                "task": "Implement your own version of Promise.all that takes an array of promises and resolves when all complete.",
+                "xp": 220,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["Promise", "resolve", "reject"]},
+                    {"type": "code_contains_any", "expected": ["forEach", "map", "length"]}
+                ]
+            },
+            {
+                "title": "Proxy Validator",
+                "task": "Create a Proxy-based object validator that validates property types on set.",
+                "xp": 240,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["Proxy", "set"]},
+                    {"type": "code_contains_any", "expected": ["typeof", "throw", "Error"]}
+                ]
+            },
+            {
+                "title": "Generator Iterator",
+                "task": "Create a generator function that yields Fibonacci numbers infinitely.",
+                "xp": 210,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["function*", "yield"]},
+                ]
+            },
+            {
+                "title": "Curry Function",
+                "task": "Implement a curry function that converts a multi-argument function into a chain of single-argument functions.",
+                "xp": 230,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["return"]},
+                    {"type": "code_contains_any", "expected": ["length", "args", "arguments", "..."]}
+                ]
+            },
+            {
+                "title": "Observable Pattern",
+                "task": "Implement a simple Observable class with subscribe, unsubscribe, and next methods.",
+                "xp": 250,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class"]},
+                    {"type": "code_contains_any", "expected": ["subscribe", "next", "unsubscribe"]}
+                ]
+            },
+            {
+                "title": "Async Queue",
+                "task": "Build an async task queue that processes tasks with a configurable concurrency limit.",
+                "xp": 260,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["async", "await"]},
+                    {"type": "code_contains_any", "expected": ["queue", "Queue", "concurrency", "limit"]}
+                ]
+            },
+            {
+                "title": "Virtual DOM Diff",
+                "task": "Implement a simple diff algorithm that compares two virtual DOM tree objects and returns patches.",
+                "xp": 280,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["function", "=>"]},
+                    {"type": "code_contains_any", "expected": ["diff", "patch", "children", "type"]}
+                ]
+            },
+            {
+                "title": "Middleware Pipeline",
+                "task": "Create a middleware pipeline (like Express.js) that chains functions with next().",
+                "xp": 245,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["next", "middleware", "use"]},
+                    {"type": "code_contains_any", "expected": ["function", "class", "=>"]}
+                ]
+            }
+        ]
+    },
+    "java": {
+        "Beginner": [
+            {
+                "title": "Loop Logic",
+                "task": "Print numbers 1 to 10 using a for loop with System.out.println().",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for", "System.out.println"]}
+                ]
+            },
+            {
+                "title": "Sum Method",
+                "task": "Create a method that takes two integers and returns their sum.",
+                "xp": 45,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["int", "return"]},
+                    {"type": "code_contains_any", "expected": ["public", "static", "private"]}
+                ]
+            },
+            {
+                "title": "Even or Odd",
+                "task": "Write a method that checks if a number is even or odd and returns a String.",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["%", "2"]},
+                    {"type": "code_contains_any", "expected": ["even", "odd", "Even", "Odd"]}
+                ]
+            },
+            {
+                "title": "String Reversal",
+                "task": "Reverse a string without using StringBuilder.reverse().",
+                "xp": 60,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["charAt", "toCharArray", "for"]},
+                    {"type": "code_not_contains", "expected": [".reverse()"]}
+                ]
+            },
+            {
+                "title": "Array Max",
+                "task": "Find the maximum value in an integer array without using Arrays.sort() or Collections.",
+                "xp": 55,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for", "int"]},
+                    {"type": "code_not_contains", "expected": ["Arrays.sort", "Collections"]}
+                ]
+            },
+            {
+                "title": "FizzBuzz",
+                "task": "Print numbers 1-100. Print 'Fizz' for multiples of 3, 'Buzz' for 5, 'FizzBuzz' for both.",
+                "xp": 70,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["%", "for"]},
+                    {"type": "code_contains_any", "expected": ["Fizz", "Buzz"]}
+                ]
+            },
+            {
+                "title": "Palindrome Check",
+                "task": "Write a method to check if a given string is a palindrome.",
+                "xp": 65,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["boolean"]},
+                    {"type": "code_contains_any", "expected": ["charAt", "equals", "for"]}
+                ]
+            },
+            {
+                "title": "Factorial Calculator",
+                "task": "Create a method that calculates the factorial of a number using a loop.",
+                "xp": 55,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for", "return"]},
+                    {"type": "code_contains_any", "expected": ["*=", "* "]}
+                ]
+            },
+            {
+                "title": "Vowel Counter",
+                "task": "Write a method that counts the number of vowels in a string.",
+                "xp": 60,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for"]},
+                    {"type": "code_contains_any", "expected": ["aeiou", "AEIOU", "charAt", "contains"]}
+                ]
+            },
+            {
+                "title": "Grade Calculator",
+                "task": "Create a method that converts a score (0-100) to a letter grade (A, B, C, D, F).",
+                "xp": 60,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["if", "switch"]},
+                    {"type": "code_contains", "expected": ["return"]}
+                ]
+            }
+        ],
+        "Intermediate": [
+            {
+                "title": "ArrayList Operations",
+                "task": "Create a method that removes duplicates from an ArrayList while preserving order.",
+                "xp": 110,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["ArrayList", "List", "LinkedHashSet"]},
+                    {"type": "code_contains", "expected": ["return"]}
+                ]
+            },
+            {
+                "title": "HashMap Word Count",
+                "task": "Count the frequency of each word in a string and return a HashMap.",
+                "xp": 120,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["HashMap", "split"]},
+                    {"type": "code_contains_any", "expected": ["put", "getOrDefault", "merge"]}
+                ]
+            },
+            {
+                "title": "Binary Search",
+                "task": "Implement binary search on a sorted integer array.",
+                "xp": 130,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["while", "int"]},
+                    {"type": "code_contains_any", "expected": ["mid", "middle", "low", "high"]}
+                ]
+            },
+            {
+                "title": "Stack Implementation",
+                "task": "Implement a Stack data structure using an array with push, pop, and peek methods.",
+                "xp": 125,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class"]},
+                    {"type": "code_contains_any", "expected": ["push", "pop", "peek"]}
+                ]
+            },
+            {
+                "title": "Interface Design",
+                "task": "Create an interface 'Shape' with an area() method. Implement it for Circle and Rectangle.",
+                "xp": 115,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["interface", "implements"]},
+                    {"type": "code_contains_any", "expected": ["area", "Circle", "Rectangle"]}
+                ]
+            },
+            {
+                "title": "Exception Handler",
+                "task": "Create a custom exception class and use it in a method that validates user age (must be 0-150).",
+                "xp": 120,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["extends", "throw"]},
+                    {"type": "code_contains_any", "expected": ["Exception", "try", "catch"]}
+                ]
+            },
+            {
+                "title": "Comparable Sort",
+                "task": "Create a Student class that implements Comparable to sort by GPA descending.",
+                "xp": 125,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["Comparable", "compareTo"]},
+                    {"type": "code_contains_any", "expected": ["class", "Student"]}
+                ]
+            },
+            {
+                "title": "Stream Filter",
+                "task": "Use Java Streams to filter a list of integers and keep only even numbers greater than 10.",
+                "xp": 115,
+                "testCases": [
+                    {"type": "code_contains", "expected": [".stream()", ".filter("]},
+                    {"type": "code_contains_any", "expected": ["->", "collect", "Collectors"]}
+                ]
+            },
+            {
+                "title": "Generic Pair",
+                "task": "Create a generic Pair<K, V> class with getKey() and getValue() methods.",
+                "xp": 130,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class", "<", ">"]},
+                    {"type": "code_contains_any", "expected": ["getKey", "getValue", "K", "V"]}
+                ]
+            },
+            {
+                "title": "Bubble Sort",
+                "task": "Implement the bubble sort algorithm for an integer array.",
+                "xp": 125,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for", "for", "int"]},
+                    {"type": "code_contains_any", "expected": ["swap", "temp", ">", "<"]}
+                ]
+            }
+        ],
+        "Advanced": [
+            {
+                "title": "Thread-Safe Singleton",
+                "task": "Implement a thread-safe Singleton pattern using double-checked locking.",
+                "xp": 220,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["synchronized", "volatile", "private"]},
+                    {"type": "code_contains_any", "expected": ["getInstance", "instance", "Singleton"]}
+                ]
+            },
+            {
+                "title": "Producer Consumer",
+                "task": "Implement a producer-consumer pattern using wait() and notify().",
+                "xp": 250,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["synchronized"]},
+                    {"type": "code_contains_any", "expected": ["wait", "notify", "notifyAll"]}
+                ]
+            },
+            {
+                "title": "Custom Annotation",
+                "task": "Create a custom annotation @Validate and a processor that checks if a String field is not empty.",
+                "xp": 240,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["@interface", "@Retention"]},
+                    {"type": "code_contains_any", "expected": ["Validate", "annotation"]}
+                ]
+            },
+            {
+                "title": "LRU Cache",
+                "task": "Implement an LRU Cache using LinkedHashMap with a fixed capacity.",
+                "xp": 230,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class", "LinkedHashMap"]},
+                    {"type": "code_contains_any", "expected": ["get", "put", "removeEldest"]}
+                ]
+            },
+            {
+                "title": "Builder Pattern",
+                "task": "Implement the Builder design pattern for a complex User object with optional fields.",
+                "xp": 210,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class", "Builder", "build"]},
+                    {"type": "code_contains", "expected": ["return this"]}
+                ]
+            },
+            {
+                "title": "CompletableFuture Chain",
+                "task": "Chain multiple CompletableFuture operations with thenApply, thenCompose, and error handling.",
+                "xp": 260,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["CompletableFuture"]},
+                    {"type": "code_contains_any", "expected": ["thenApply", "thenCompose", "exceptionally"]}
+                ]
+            },
+            {
+                "title": "Binary Tree",
+                "task": "Implement a Binary Search Tree with insert, search, and in-order traversal methods.",
+                "xp": 245,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class"]},
+                    {"type": "code_contains_any", "expected": ["insert", "search", "left", "right"]}
+                ]
+            },
+            {
+                "title": "Observer Pattern",
+                "task": "Implement the Observer design pattern with Subject and Observer interfaces.",
+                "xp": 235,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["interface"]},
+                    {"type": "code_contains_any", "expected": ["Observer", "Subject", "notify", "update"]}
+                ]
+            }
+        ]
+    },
+    "csharp": {
+        "Beginner": [
+            {
+                "title": "Loop Logic",
+                "task": "Print numbers 1 to 10 using a for loop with Console.WriteLine().",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for", "Console.WriteLine"]}
+                ]
+            },
+            {
+                "title": "Method Sum",
+                "task": "Create a method that takes two integers and returns their sum.",
+                "xp": 45,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["int", "return"]},
+                    {"type": "code_contains_any", "expected": ["public", "static", "private"]}
+                ]
+            },
+            {
+                "title": "Even or Odd",
+                "task": "Write a method that checks if a number is even or odd.",
+                "xp": 50,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["%", "2"]},
+                    {"type": "code_contains_any", "expected": ["even", "odd", "Even", "Odd"]}
+                ]
+            },
+            {
+                "title": "String Reversal",
+                "task": "Reverse a string without using Array.Reverse() or LINQ Reverse().",
+                "xp": 60,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for"]},
+                    {"type": "code_not_contains", "expected": ["Array.Reverse", ".Reverse()"]}
+                ]
+            },
+            {
+                "title": "FizzBuzz",
+                "task": "Print numbers 1-100. Print 'Fizz' for multiples of 3, 'Buzz' for 5, 'FizzBuzz' for both.",
+                "xp": 70,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["%", "for"]},
+                    {"type": "code_contains_any", "expected": ["Fizz", "Buzz"]}
+                ]
+            },
+            {
+                "title": "Array Max",
+                "task": "Find the maximum value in an integer array without using LINQ Max().",
+                "xp": 55,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for", "int"]},
+                    {"type": "code_not_contains", "expected": [".Max()"]}
+                ]
+            },
+            {
+                "title": "Palindrome Check",
+                "task": "Write a method to check if a given string is a palindrome.",
+                "xp": 65,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["bool"]},
+                    {"type": "code_contains_any", "expected": ["for", "while", "ToCharArray"]}
+                ]
+            },
+            {
+                "title": "Vowel Counter",
+                "task": "Write a method that counts the number of vowels in a string.",
+                "xp": 60,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for"]},
+                    {"type": "code_contains_any", "expected": ["aeiou", "Contains", "switch"]}
+                ]
+            },
+            {
+                "title": "String Interpolation",
+                "task": "Create a method that returns a formatted greeting using string interpolation ($\"\").",
+                "xp": 40,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["$\"", "{"]},
+                    {"type": "code_contains", "expected": ["return"]}
+                ]
+            },
+            {
+                "title": "Grade Calculator",
+                "task": "Create a method that converts a score (0-100) to a letter grade.",
+                "xp": 60,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["if", "switch"]},
+                    {"type": "code_contains", "expected": ["return"]}
+                ]
+            }
+        ],
+        "Intermediate": [
+            {
+                "title": "LINQ Filter",
+                "task": "Use LINQ to filter a list of integers and keep only even numbers greater than 10.",
+                "xp": 110,
+                "testCases": [
+                    {"type": "code_contains", "expected": [".Where("]},
+                    {"type": "code_contains_any", "expected": ["=>", "LINQ", "using System.Linq"]}
+                ]
+            },
+            {
+                "title": "Dictionary Word Count",
+                "task": "Count the frequency of each word in a string using Dictionary<string, int>.",
+                "xp": 120,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["Dictionary"]},
+                    {"type": "code_contains_any", "expected": ["Split", "ContainsKey", "TryGetValue"]}
+                ]
+            },
+            {
+                "title": "Interface Design",
+                "task": "Create an IShape interface with Area() and Perimeter() methods. Implement for Circle and Rectangle.",
+                "xp": 115,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["interface", ":"]},
+                    {"type": "code_contains_any", "expected": ["Area", "IShape"]}
+                ]
+            },
+            {
+                "title": "Extension Method",
+                "task": "Create an extension method for string that returns the word count.",
+                "xp": 120,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["static", "this string"]},
+                    {"type": "code_contains", "expected": ["return"]}
+                ]
+            },
+            {
+                "title": "Async/Await",
+                "task": "Write an async method that simulates fetching data with Task.Delay and returns a result.",
+                "xp": 125,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["async", "await", "Task"]},
+                    {"type": "code_contains_any", "expected": ["Delay", "return"]}
+                ]
+            },
+            {
+                "title": "Generic Stack",
+                "task": "Implement a generic Stack<T> class with Push, Pop, and Peek methods.",
+                "xp": 125,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class", "<T>"]},
+                    {"type": "code_contains_any", "expected": ["Push", "Pop", "Peek"]}
+                ]
+            },
+            {
+                "title": "Events and Delegates",
+                "task": "Create a class with a custom event and delegate. Raise the event when a value changes.",
+                "xp": 130,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["event", "delegate"]},
+                    {"type": "code_contains_any", "expected": ["Invoke", "+="]}
+                ]
+            },
+            {
+                "title": "Binary Search",
+                "task": "Implement binary search on a sorted integer array.",
+                "xp": 130,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["while", "int"]},
+                    {"type": "code_contains_any", "expected": ["mid", "low", "high"]}
+                ]
+            },
+            {
+                "title": "Bubble Sort",
+                "task": "Implement the bubble sort algorithm.",
+                "xp": 125,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["for", "for"]},
+                    {"type": "code_contains_any", "expected": ["swap", "temp", ">", "<"]}
+                ]
+            },
+            {
+                "title": "Record Type",
+                "task": "Create a record type for a Person with name and age, and demonstrate immutability with 'with' expressions.",
+                "xp": 110,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["record"]},
+                    {"type": "code_contains_any", "expected": ["with", "Person"]}
+                ]
+            }
+        ],
+        "Advanced": [
+            {
+                "title": "Dependency Injection",
+                "task": "Implement a simple DI container with Register and Resolve methods using generics.",
+                "xp": 240,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class", "Dictionary"]},
+                    {"type": "code_contains_any", "expected": ["Register", "Resolve", "Type"]}
+                ]
+            },
+            {
+                "title": "Observer Pattern",
+                "task": "Implement the Observer pattern with IObservable<T> and IObserver<T>.",
+                "xp": 230,
+                "testCases": [
+                    {"type": "code_contains_any", "expected": ["IObservable", "IObserver", "Subscribe"]},
+                    {"type": "code_contains", "expected": ["class"]}
+                ]
+            },
+            {
+                "title": "Async Pipeline",
+                "task": "Create an async data processing pipeline using Task chaining with ContinueWith or async/await.",
+                "xp": 250,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["async", "await", "Task"]},
+                    {"type": "code_contains_any", "expected": ["ContinueWith", "WhenAll", "pipeline"]}
+                ]
+            },
+            {
+                "title": "Expression Tree",
+                "task": "Build a simple expression tree that evaluates mathematical expressions.",
+                "xp": 260,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class"]},
+                    {"type": "code_contains_any", "expected": ["Evaluate", "Expression", "Node", "left", "right"]}
+                ]
+            },
+            {
+                "title": "Middleware Pattern",
+                "task": "Implement an ASP.NET-style middleware pipeline with Use and Run methods.",
+                "xp": 245,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class"]},
+                    {"type": "code_contains_any", "expected": ["Use", "Run", "next", "Invoke"]}
+                ]
+            },
+            {
+                "title": "Custom LINQ Operator",
+                "task": "Create a custom LINQ extension method 'WhereNot' that filters out items matching a predicate.",
+                "xp": 225,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["static", "this", "IEnumerable"]},
+                    {"type": "code_contains_any", "expected": ["WhereNot", "Func<", "yield"]}
+                ]
+            },
+            {
+                "title": "Thread-Safe Cache",
+                "task": "Implement a thread-safe cache using ConcurrentDictionary with expiration.",
+                "xp": 255,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["ConcurrentDictionary"]},
+                    {"type": "code_contains_any", "expected": ["DateTime", "expir", "TimeSpan"]}
+                ]
+            },
+            {
+                "title": "Builder Pattern",
+                "task": "Implement the Builder pattern for a complex object with method chaining.",
+                "xp": 220,
+                "testCases": [
+                    {"type": "code_contains", "expected": ["class", "Builder", "Build"]},
+                    {"type": "code_contains", "expected": ["return this"]}
+                ]
+            }
+        ]
+    },
+    "python": {
+        "Beginner": [],
+        "Intermediate": [],
+        "Advanced": []
+    }
+}
+
+# Python uses the original CHALLENGES dict
+LANGUAGE_QUESTS["python"]["Beginner"] = CHALLENGES["Beginner"]
+LANGUAGE_QUESTS["python"]["Intermediate"] = CHALLENGES["Intermediate"]
+LANGUAGE_QUESTS["python"]["Advanced"] = CHALLENGES["Advanced"]
+
+# Build a flat lookup for quest IDs (across all languages)
+# Assign unique IDs to language quests starting from 100
+_next_id = 100
+for lang, levels in LANGUAGE_QUESTS.items():
+    if lang == "python":
+        continue  # Python quests already have IDs 1-36
+    for level, quests in levels.items():
+        for q in quests:
+            q["id"] = _next_id
+            q["language"] = lang
+            _next_id += 1
+
+# Add language tag to python quests too
+for level, quests in LANGUAGE_QUESTS["python"].items():
+    for q in quests:
+        q["language"] = "python"
+
+# Build flat quest lookup for validation
+ALL_QUESTS = {}
+for lang, levels in LANGUAGE_QUESTS.items():
+    for level, quests in levels.items():
+        for q in quests:
+            ALL_QUESTS[q["id"]] = q
+
 # --- Solution Validator ---
 import io
 import sys
@@ -388,15 +1208,7 @@ import re
 
 def validate_solution(code: str, quest_id: int) -> dict:
     """Validate a solution against test cases for a quest."""
-    # Find the quest
-    quest = None
-    for level_quests in CHALLENGES.values():
-        for q in level_quests:
-            if q["id"] == quest_id:
-                quest = q
-                break
-        if quest:
-            break
+    quest = ALL_QUESTS.get(quest_id)
 
     if not quest:
         return {"passed": False, "message": "Quest not found", "tests_passed": 0, "tests_total": 0}
@@ -441,6 +1253,17 @@ def validate_solution(code: str, quest_id: int) -> dict:
 
             elif test_type == "output_contains":
                 # Run code and check if output contains expected strings
+                # Only works for Python quests
+                quest_lang = quest.get("language", "python")
+                if quest_lang != "python":
+                    # For non-Python, just check code contains the expected strings
+                    expected = test.get("expected", [])
+                    if any(exp in code for exp in expected):
+                        tests_passed += 1
+                    else:
+                        failed_tests.append(f"Output check skipped for {quest_lang}")
+                    continue
+
                 try:
                     old_stdout = sys.stdout
                     sys.stdout = buffer = io.StringIO()
@@ -458,7 +1281,12 @@ def validate_solution(code: str, quest_id: int) -> dict:
                     failed_tests.append(f"Execution error: {str(e)[:50]}")
 
             elif test_type == "function_test":
-                # Test a specific function with inputs
+                # Test a specific function with inputs (Python only)
+                quest_lang = quest.get("language", "python")
+                if quest_lang != "python":
+                    tests_passed += 1  # Skip function tests for non-Python
+                    continue
+
                 func_name = test.get("function")
                 inputs = test.get("inputs", [])
                 expected = test.get("expected", [])
@@ -528,6 +1356,8 @@ def validate_solution(code: str, quest_id: int) -> dict:
         "details": failed_tests[:3] if not passed else []  # Return first 3 failure details
     }
 
+# --- Pydantic Models ---
+
 class CodeSession(BaseModel):
     userId: str
     email: str
@@ -537,6 +1367,30 @@ class CodeSession(BaseModel):
     duration: float
     keystrokes: int
     questId: int = None  # Optional quest ID for validation
+
+class SessionStartRequest(BaseModel):
+    userId: str
+    email: str
+    language: Optional[str] = None
+
+class SessionUpdateRequest(BaseModel):
+    totalKeystrokes: int = 0
+    totalPastes: int = 0
+    totalEdits: int = 0
+    activeDuration: float = 0
+    idleDuration: float = 0
+    filesEdited: List[str] = []
+    languagesUsed: List[str] = []
+
+class SessionEndRequest(BaseModel):
+    totalKeystrokes: int = 0
+    totalPastes: int = 0
+    totalEdits: int = 0
+    totalDuration: float = 0
+    activeDuration: float = 0
+    idleDuration: float = 0
+    filesEdited: List[str] = []
+    languagesUsed: List[str] = []
 
 # --- API Endpoints ---
 
@@ -570,11 +1424,133 @@ async def get_user_id(email: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error querying user: {str(e)}")
 
+# --- Persistent Session Endpoints ---
+
+@app.post("/session/start")
+async def session_start(req: SessionStartRequest):
+    """Create a new persistent session. Returns sessionId. Call once when tracking starts."""
+    try:
+        session_id = str(uuid.uuid4())
+        doc_data = {
+            "sessionId": session_id,
+            "userId": req.userId,
+            "email": req.email,
+            "status": "active",
+            "language": req.language,
+            "startTime": firestore.SERVER_TIMESTAMP,
+            "endTime": None,
+            "totalKeystrokes": 0,
+            "totalPastes": 0,
+            "totalEdits": 0,
+            "totalDuration": 0,
+            "activeDuration": 0,
+            "idleDuration": 0,
+            "filesEdited": [],
+            "languagesUsed": [],
+        }
+        db.collection("sessions").document(session_id).set(doc_data)
+        return {"status": "success", "sessionId": session_id}
+    except Exception as e:
+        print(f"Session start error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/session/{session_id}/update")
+async def session_update(session_id: str, req: SessionUpdateRequest):
+    """Update an active session with latest metrics. Call periodically (e.g., every 30s)."""
+    try:
+        doc_ref = db.collection("sessions").document(session_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        update_data = {
+            "totalKeystrokes": req.totalKeystrokes,
+            "totalPastes": req.totalPastes,
+            "totalEdits": req.totalEdits,
+            "activeDuration": req.activeDuration,
+            "idleDuration": req.idleDuration,
+            "filesEdited": req.filesEdited,
+            "languagesUsed": req.languagesUsed,
+            "lastUpdated": firestore.SERVER_TIMESTAMP,
+        }
+        doc_ref.update(update_data)
+        return {"status": "success", "sessionId": session_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Session update error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/session/{session_id}/end")
+async def session_end(session_id: str, req: SessionEndRequest):
+    """End a session. Call when user stops tracking or exits VS Code."""
+    try:
+        doc_ref = db.collection("sessions").document(session_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        update_data = {
+            "status": "completed",
+            "endTime": firestore.SERVER_TIMESTAMP,
+            "totalKeystrokes": req.totalKeystrokes,
+            "totalPastes": req.totalPastes,
+            "totalEdits": req.totalEdits,
+            "totalDuration": req.totalDuration,
+            "activeDuration": req.activeDuration,
+            "idleDuration": req.idleDuration,
+            "filesEdited": req.filesEdited,
+            "languagesUsed": req.languagesUsed,
+        }
+        doc_ref.update(update_data)
+        return {"status": "success", "sessionId": session_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Session end error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Quest Endpoints ---
+
 @app.get("/get-quest/{skill_level}")
-async def get_quest(skill_level: str):
-    """Returns a random challenge based on the detected skill level."""
-    quests = CHALLENGES.get(skill_level, CHALLENGES["Beginner"])
-    return random.choice(quests)
+async def get_quest(skill_level: str, language: Optional[str] = None):
+    """Returns a random challenge based on skill level and optional language.
+    If language is provided and has quests, returns a language-specific quest.
+    Otherwise falls back to Python quests.
+    """
+    lang = (language or "python").lower()
+
+    # Map common language names to our keys
+    lang_map = {
+        "python": "python", "py": "python",
+        "javascript": "javascript", "js": "javascript", "typescript": "javascript", "ts": "javascript",
+        "java": "java",
+        "csharp": "csharp", "c#": "csharp", "cs": "csharp",
+    }
+    lang = lang_map.get(lang, lang)
+
+    # Get quests for this language and level
+    lang_quests = LANGUAGE_QUESTS.get(lang, LANGUAGE_QUESTS.get("python", {}))
+    quests = lang_quests.get(skill_level, lang_quests.get("Beginner", []))
+
+    if not quests:
+        # Fallback to python
+        quests = CHALLENGES.get(skill_level, CHALLENGES["Beginner"])
+
+    quest = random.choice(quests)
+    return {**quest, "language": lang}
+
+@app.get("/get-quest-languages")
+async def get_quest_languages():
+    """Returns the list of supported languages for quests."""
+    languages = []
+    for lang, levels in LANGUAGE_QUESTS.items():
+        total = sum(len(quests) for quests in levels.values())
+        if total > 0:
+            languages.append({"id": lang, "name": lang.capitalize(), "questCount": total})
+    return {"languages": languages}
+
+# --- Code Analysis ---
 
 @app.post("/analyze")
 async def analyze_code(session: CodeSession):
