@@ -1588,6 +1588,70 @@ async def get_quest(skill_level: str, language: Optional[str] = None):
     quest = random.choice(quests)
     return {**quest, "language": lang}
 
+@app.get("/get-quests/{skill_level}")
+async def get_quests(skill_level: str, language: Optional[str] = None, count: int = 6):
+    """Returns multiple quests for a language and skill level.
+    Used by the Quest Playground to show a list of available quests.
+    """
+    lang = _normalize_language(language)
+
+    # Try Firestore first
+    quests = await _get_quests_from_firestore(lang, skill_level)
+
+    # Fallback to hardcoded quests if Firestore has none
+    if not quests:
+        lang_quests = LANGUAGE_QUESTS.get(lang, LANGUAGE_QUESTS.get("python", {}))
+        quests = lang_quests.get(skill_level, lang_quests.get("Beginner", []))
+
+    if not quests:
+        quests = CHALLENGES.get(skill_level, CHALLENGES["Beginner"])
+
+    # Shuffle and limit
+    random.shuffle(quests)
+    selected = quests[:min(count, len(quests))]
+
+    return {"quests": [{**q, "language": lang} for q in selected], "total": len(quests)}
+
+@app.get("/detect-language/{user_id}")
+async def detect_language(user_id: str):
+    """Detect the most-used language from a user's recent sessions.
+    Checks both extension sessions (languagesUsed) and quest sessions (language field).
+    """
+    try:
+        lang_counts = {}
+
+        # Query recent sessions for this user
+        sessions_ref = db.collection("sessions").where(
+            filter=FieldFilter("userId", "==", user_id)
+        )
+        docs = sessions_ref.stream()
+
+        for doc in docs:
+            data = doc.to_dict()
+            # Extension sessions have languagesUsed array
+            for lang in data.get("languagesUsed", []):
+                normalized = _normalize_language(lang)
+                lang_counts[normalized] = lang_counts.get(normalized, 0) + 2  # weight extension sessions higher
+            # Quest/analyze sessions have a language field
+            if data.get("language"):
+                normalized = _normalize_language(data["language"])
+                lang_counts[normalized] = lang_counts.get(normalized, 0) + 1
+
+        if not lang_counts:
+            return {"language": "python", "confidence": 0, "all": {}}
+
+        # Find most used language
+        detected = max(lang_counts, key=lang_counts.get)
+
+        return {
+            "language": detected,
+            "confidence": lang_counts[detected],
+            "all": lang_counts
+        }
+    except Exception as e:
+        print(f"Language detection error: {e}")
+        return {"language": "python", "confidence": 0, "all": {}}
+
 @app.get("/get-quest-languages")
 async def get_quest_languages():
     """Returns the list of supported languages for quests (from Firestore + hardcoded)."""
