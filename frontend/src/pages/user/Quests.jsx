@@ -14,6 +14,7 @@ const LANGUAGES = [
   { id: "javascript", name: "JavaScript", monacoId: "javascript", icon: "🟨" },
   { id: "java", name: "Java", monacoId: "java", icon: "☕" },
   { id: "csharp", name: "C#", monacoId: "csharp", icon: "🟪" },
+  { id: "html", name: "HTML/CSS", monacoId: "html", icon: "🌐" },
 ];
 
 const CODE_TEMPLATES = {
@@ -21,10 +22,11 @@ const CODE_TEMPLATES = {
   javascript: (title, task) => `// ${title}\n// Task: ${task}\n\n// Write your solution here:\n`,
   java: (title, task) => `// ${title}\n// Task: ${task}\n\npublic class Solution {\n    // Write your solution here:\n    \n}\n`,
   csharp: (title, task) => `// ${title}\n// Task: ${task}\n\nusing System;\n\n// Write your solution here:\n`,
+  html: (title, task) => `<!-- ${title} -->\n<!-- Task: ${task} -->\n\n<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>${title}</title>\n    <style>\n        /* Write your CSS here */\n    </style>\n</head>\n<body>\n    <!-- Write your HTML here -->\n    \n</body>\n</html>\n`,
 };
 
 const getFileExtension = (lang) => {
-  const extensions = { python: "py", javascript: "js", java: "java", csharp: "cs" };
+  const extensions = { python: "py", javascript: "js", java: "java", csharp: "cs", html: "html" };
   return extensions[lang] || "txt";
 };
 
