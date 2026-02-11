@@ -9,26 +9,43 @@ import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, setDoc,
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-const LANGUAGES = [
-  { id: "python", name: "Python", monacoId: "python", icon: "🐍" },
-  { id: "javascript", name: "JavaScript", monacoId: "javascript", icon: "🟨" },
-  { id: "java", name: "Java", monacoId: "java", icon: "☕" },
-  { id: "csharp", name: "C#", monacoId: "csharp", icon: "🟪" },
-  { id: "html", name: "HTML/CSS", monacoId: "html", icon: "🌐" },
-];
-
-const CODE_TEMPLATES = {
-  python: (title, task) => `# ${title}\n# Task: ${task}\n\n# Write your solution here:\n`,
-  javascript: (title, task) => `// ${title}\n// Task: ${task}\n\n// Write your solution here:\n`,
-  java: (title, task) => `// ${title}\n// Task: ${task}\n\npublic class Solution {\n    // Write your solution here:\n    \n}\n`,
-  csharp: (title, task) => `// ${title}\n// Task: ${task}\n\nusing System;\n\n// Write your solution here:\n`,
-  html: (title, task) => `<!-- ${title} -->\n<!-- Task: ${task} -->\n\n<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>${title}</title>\n    <style>\n        /* Write your CSS here */\n    </style>\n</head>\n<body>\n    <!-- Write your HTML here -->\n    \n</body>\n</html>\n`,
+// Monaco editor language IDs for detected languages
+const MONACO_MAP = {
+  python: "python", javascript: "javascript", typescript: "typescript",
+  java: "java", csharp: "csharp", html: "html", css: "css",
+  cpp: "cpp", c: "c", go: "go", rust: "rust", ruby: "ruby",
+  php: "php", swift: "swift", kotlin: "kotlin", r: "r",
+  sql: "sql", shell: "shell",
 };
 
-const getFileExtension = (lang) => {
-  const extensions = { python: "py", javascript: "js", java: "java", csharp: "cs", html: "html" };
-  return extensions[lang] || "txt";
+// File extensions per language
+const EXT_MAP = {
+  python: "py", javascript: "js", typescript: "ts", java: "java",
+  csharp: "cs", html: "html", css: "css", cpp: "cpp", c: "c",
+  go: "go", rust: "rs", ruby: "rb", php: "php", swift: "swift",
+  kotlin: "kt", r: "r", sql: "sql", shell: "sh",
 };
+
+// Generate a sensible code template for any language
+const getCodeTemplate = (lang, title, task) => {
+  const comment = (style, t, d) => {
+    if (style === "hash") return `# ${t}\n# Task: ${d}\n\n# Write your solution here:\n`;
+    if (style === "html") return `<!-- ${t} -->\n<!-- Task: ${d} -->\n\n<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <title>${t}</title>\n    <style>\n        /* Write your CSS here */\n    </style>\n</head>\n<body>\n    <!-- Write your HTML here -->\n    \n</body>\n</html>\n`;
+    if (style === "css") return `/* ${t} */\n/* Task: ${d} */\n\n/* Write your CSS here */\n`;
+    if (style === "sql") return `-- ${t}\n-- Task: ${d}\n\n-- Write your SQL here\n`;
+    return `// ${t}\n// Task: ${d}\n\n// Write your solution here:\n`;
+  };
+
+  const hashLangs = ["python", "ruby", "r", "shell"];
+  if (hashLangs.includes(lang)) return comment("hash", title, task);
+  if (lang === "html") return comment("html", title, task);
+  if (lang === "css") return comment("css", title, task);
+  if (lang === "sql") return comment("sql", title, task);
+  return comment("slash", title, task);
+};
+
+const getFileExtension = (lang) => EXT_MAP[lang] || "txt";
+const getMonacoId = (lang) => MONACO_MAP[lang] || lang;
 
 const Quests = () => {
   // --- State ---
@@ -137,11 +154,20 @@ const Quests = () => {
     }
   }, [userSkillLevel, selectedLanguage]);
 
+  // Build language tabs dynamically from what the user has been coding in
+  const languageTabs = Object.entries(allLangCounts)
+    .sort((a, b) => b[1] - a[1]) // sort by session count descending
+    .map(([id, count]) => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1), count }));
+
+  // If selected language isn't in the tabs yet, add it
+  if (selectedLanguage && !languageTabs.find(l => l.id === selectedLanguage)) {
+    languageTabs.unshift({ id: selectedLanguage, name: selectedLanguage.charAt(0).toUpperCase() + selectedLanguage.slice(1), count: 0 });
+  }
+
   // --- Pick a quest to solve ---
   const selectQuest = (quest) => {
     setActiveQuest(quest);
-    const template = CODE_TEMPLATES[selectedLanguage] || CODE_TEMPLATES.python;
-    setCode(template(quest.title, quest.task));
+    setCode(getCodeTemplate(selectedLanguage, quest.title, quest.task));
     startTimeRef.current = Date.now();
     setKeystrokes(0);
     setResult(null);
@@ -256,7 +282,8 @@ const Quests = () => {
     setSubmitting(false);
   };
 
-  const currentLang = LANGUAGES.find(l => l.id === selectedLanguage) || LANGUAGES[0];
+  const langName = selectedLanguage.charAt(0).toUpperCase() + selectedLanguage.slice(1);
+  const monacoId = getMonacoId(selectedLanguage);
 
   // ==================== QUEST SOLVING VIEW ====================
   if (activeQuest) {
@@ -268,7 +295,7 @@ const Quests = () => {
             <ArrowLeft size={20} /> Back to Quests
           </button>
           <div className="flex items-center gap-3">
-            <span className="text-slate-500 text-sm">{currentLang.icon} {currentLang.name}</span>
+            <span className="text-slate-500 text-sm">{langName}</span>
             <div className="bg-gradient-to-r from-indigo-500/20 to-purple-500/20 px-4 py-2 rounded-full border border-indigo-500/30">
               <span className="text-indigo-400 font-semibold">Level: {userSkillLevel}</span>
             </div>
@@ -282,7 +309,7 @@ const Quests = () => {
               <Code2 className="text-indigo-400" size={28} />
               <div>
                 <h2 className="text-2xl font-bold text-white">{activeQuest.title}</h2>
-                <p className="text-slate-400 text-sm mt-1">{currentLang.icon} {currentLang.name}</p>
+                <p className="text-slate-400 text-sm mt-1">{langName}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 text-yellow-400 bg-yellow-400/10 px-4 py-2 rounded-full border border-yellow-400/20">
@@ -307,7 +334,7 @@ const Quests = () => {
             <div className="flex items-center gap-2">
               <Play className="text-green-400" size={18} />
               <span className="text-slate-300 font-semibold">Code Editor</span>
-              <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">{currentLang.name}</span>
+              <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">{langName}</span>
             </div>
             <div className="text-xs text-slate-500">
               Keystrokes: <span className="text-indigo-400 font-mono">{keystrokes}</span>
@@ -315,7 +342,7 @@ const Quests = () => {
           </div>
           <Editor
             height="400px"
-            language={currentLang.monacoId}
+            language={monacoId}
             theme="vs-dark"
             value={code}
             onChange={handleEditorChange}
@@ -449,44 +476,44 @@ const Quests = () => {
         </p>
       </div>
 
-      {/* Language Tabs - auto-detected language is highlighted */}
-      <div className="flex items-center justify-center gap-3 flex-wrap">
-        <Globe className="text-slate-400" size={18} />
-        <div className="flex gap-2 flex-wrap justify-center">
-          {LANGUAGES.map((lang) => {
-            const isDetected = lang.id === detectedLanguage;
-            const isSelected = lang.id === selectedLanguage;
-            const count = allLangCounts[lang.id] || 0;
-            return (
-              <button
-                key={lang.id}
-                onClick={() => setSelectedLanguage(lang.id)}
-                disabled={loading}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 relative ${
-                  isSelected
-                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
-                    : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700"
-                } disabled:opacity-50`}
-              >
-                <span>{lang.icon}</span>
-                {lang.name}
-                {isDetected && !isSelected && (
-                  <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-green-500/20 text-green-400 rounded-full border border-green-500/30">detected</span>
-                )}
-                {count > 0 && (
-                  <span className="text-[10px] text-slate-500">{count} sessions</span>
-                )}
-              </button>
-            );
-          })}
+      {/* Language Tabs - built dynamically from user's coding sessions */}
+      {languageTabs.length > 0 && (
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          <Globe className="text-slate-400" size={18} />
+          <div className="flex gap-2 flex-wrap justify-center">
+            {languageTabs.map((lang) => {
+              const isDetected = lang.id === detectedLanguage;
+              const isSelected = lang.id === selectedLanguage;
+              return (
+                <button
+                  key={lang.id}
+                  onClick={() => setSelectedLanguage(lang.id)}
+                  disabled={loading}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 relative ${
+                    isSelected
+                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
+                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700"
+                  } disabled:opacity-50`}
+                >
+                  {lang.name}
+                  {isDetected && !isSelected && (
+                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-green-500/20 text-green-400 rounded-full border border-green-500/30">detected</span>
+                  )}
+                  {lang.count > 0 && (
+                    <span className="text-[10px] text-slate-500">{lang.count} sessions</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Quest Grid */}
       {loading ? (
         <div className="text-center py-20">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
-          <p className="text-slate-500">Loading {currentLang.name} quests...</p>
+          <p className="text-slate-500">Loading {langName} quests...</p>
         </div>
       ) : error ? (
         <motion.div
@@ -502,13 +529,13 @@ const Quests = () => {
         <div className="text-center py-16 bg-slate-800/40 border border-slate-700 rounded-2xl">
           <Code2 size={48} className="mx-auto text-slate-600 mb-3" />
           <h3 className="text-lg font-semibold text-slate-400 mb-2">No quests available</h3>
-          <p className="text-slate-500">No {currentLang.name} quests found for {userSkillLevel} level.</p>
+          <p className="text-slate-500">No {langName} quests found for {userSkillLevel} level.</p>
         </div>
       ) : (
         <>
           <div className="flex items-center justify-between">
             <p className="text-slate-500 text-sm">
-              Showing {quests.length} {currentLang.name} quest{quests.length !== 1 ? "s" : ""} for {userSkillLevel} level
+              Showing {quests.length} {langName} quest{quests.length !== 1 ? "s" : ""} for {userSkillLevel} level
             </p>
             <button
               onClick={() => {
@@ -550,7 +577,7 @@ const Quests = () => {
                 <p className="text-slate-400 text-sm leading-relaxed line-clamp-2">{quest.task}</p>
                 <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-700/50">
                   <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <span>{currentLang.icon} {currentLang.name}</span>
+                    <span>{langName}</span>
                     {quest.testCases && (
                       <>
                         <span className="text-slate-700">|</span>

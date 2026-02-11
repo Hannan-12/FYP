@@ -9,6 +9,7 @@ import os
 import joblib
 import random
 import uuid
+import json
 
 cred_path = "firebase_config/serviceAccountKey.json"
 
@@ -1803,17 +1804,42 @@ async def session_end(session_id: str, req: SessionEndRequest):
         print(f"Session end error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Quest Endpoints (Firestore-backed with hardcoded fallback) ---
+# --- Quest Endpoints (AI-generated + Firestore cached) ---
+
+# Load Anthropic client for AI quest generation
+_anthropic_client = None
+try:
+    import anthropic
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if api_key:
+        _anthropic_client = anthropic.Anthropic(api_key=api_key)
+        print("Anthropic client initialized for AI quest generation")
+    else:
+        print("Warning: ANTHROPIC_API_KEY not set. AI quest generation disabled, using hardcoded fallback.")
+except ImportError:
+    print("Warning: anthropic package not installed. AI quest generation disabled.")
 
 def _normalize_language(language: str) -> str:
     """Normalize language name to a standard key."""
-    lang = (language or "python").lower()
+    lang = (language or "python").lower().strip()
     lang_map = {
         "python": "python", "py": "python",
-        "javascript": "javascript", "js": "javascript", "typescript": "javascript", "ts": "javascript",
+        "javascript": "javascript", "js": "javascript",
+        "typescript": "typescript", "ts": "typescript",
         "java": "java",
         "csharp": "csharp", "c#": "csharp", "cs": "csharp",
-        "html": "html", "htm": "html", "css": "html", "scss": "html", "sass": "html",
+        "html": "html", "htm": "html",
+        "css": "css", "scss": "css", "sass": "css",
+        "c": "c", "cpp": "cpp", "c++": "cpp",
+        "go": "go", "golang": "go",
+        "rust": "rust", "rs": "rust",
+        "ruby": "ruby", "rb": "ruby",
+        "php": "php",
+        "swift": "swift",
+        "kotlin": "kotlin", "kt": "kotlin",
+        "r": "r",
+        "sql": "sql",
+        "shell": "shell", "bash": "shell", "sh": "shell",
     }
     return lang_map.get(lang, lang)
 
@@ -1837,60 +1863,183 @@ async def _get_quests_from_firestore(language: str, level: str) -> list:
         print(f"Firestore quest fetch error: {e}")
         return []
 
+def _generate_quests_ai(language: str, level: str, count: int = 8) -> list:
+    """Use Claude AI to generate quests for any language and skill level.
+    Returns a list of quest dicts with title, task, xp, testCases.
+    """
+    if not _anthropic_client:
+        return []
+
+    xp_ranges = {
+        "Beginner": (30, 60),
+        "Intermediate": (65, 100),
+        "Advanced": (100, 180)
+    }
+    xp_min, xp_max = xp_ranges.get(level, (40, 80))
+
+    prompt = f"""Generate exactly {count} coding quests/challenges for the programming language: **{language}**
+Skill level: **{level}**
+
+Return ONLY valid JSON — an array of quest objects. No markdown, no explanation.
+
+Each quest object must have:
+- "title": short catchy name (2-4 words)
+- "task": clear task description telling the user exactly what to code (1-3 sentences)
+- "xp": integer between {xp_min} and {xp_max}
+- "testCases": array of test case objects for automated validation
+
+Test case types you can use:
+1. {{"type": "code_contains", "expected": ["pattern1", "pattern2"]}} — ALL patterns must be in the code
+2. {{"type": "code_not_contains", "expected": ["forbidden1"]}} — NONE of these should be in the code
+3. {{"type": "code_contains_any", "expected": ["option1", "option2"]}} — at least ONE must be in the code
+4. {{"type": "code_count", "pattern": "somepattern", "min": 3}} — pattern must appear at least N times
+
+Rules:
+- Each quest must have 1-3 test cases
+- Test cases should check for {language}-specific syntax and patterns
+- Tasks should be practical and relevant to {language}
+- {level} difficulty: {"basic syntax, simple tasks, single concepts" if level == "Beginner" else "multiple concepts, real-world patterns, moderate complexity" if level == "Intermediate" else "advanced patterns, architectural concepts, complex problem-solving"}
+- Make quests unique and interesting, not generic
+
+Example output format:
+[
+  {{
+    "title": "Loop Logic",
+    "task": "Print numbers 1 to 10 using a loop.",
+    "xp": 50,
+    "testCases": [
+      {{"type": "code_contains", "expected": ["for"]}},
+      {{"type": "code_contains_any", "expected": ["print", "console.log"]}}
+    ]
+  }}
+]
+
+Return ONLY the JSON array, nothing else."""
+
+    try:
+        response = _anthropic_client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        text = response.content[0].text.strip()
+        # Strip markdown code fences if present
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3].strip()
+
+        quests = json.loads(text)
+
+        if not isinstance(quests, list):
+            print(f"AI returned non-list: {type(quests)}")
+            return []
+
+        # Validate and clean each quest
+        valid_quests = []
+        for q in quests:
+            if isinstance(q, dict) and "title" in q and "task" in q:
+                valid_quests.append({
+                    "title": str(q.get("title", "")),
+                    "task": str(q.get("task", "")),
+                    "xp": int(q.get("xp", 50)),
+                    "testCases": q.get("testCases", []),
+                    "language": language,
+                    "level": level,
+                })
+
+        print(f"AI generated {len(valid_quests)} {language}/{level} quests")
+        return valid_quests
+
+    except Exception as e:
+        print(f"AI quest generation error: {e}")
+        return []
+
+def _save_generated_quests_to_firestore(quests: list, language: str, level: str):
+    """Save AI-generated quests to Firestore for caching."""
+    saved = 0
+    for quest in quests:
+        try:
+            doc_id = f"{language}_{quest['title'].lower().replace(' ', '_').replace('/', '_')}"
+            doc_ref = db.collection("quests").document(doc_id)
+            if not doc_ref.get().exists:
+                doc_data = {
+                    "title": quest["title"],
+                    "task": quest["task"],
+                    "xp": quest["xp"],
+                    "language": language,
+                    "level": level,
+                    "testCases": quest.get("testCases", []),
+                    "generatedBy": "ai",
+                    "createdAt": firestore.SERVER_TIMESTAMP,
+                }
+                doc_ref.set(doc_data)
+                saved += 1
+        except Exception as e:
+            print(f"Error saving quest to Firestore: {e}")
+    if saved:
+        print(f"Cached {saved} AI-generated {language}/{level} quests to Firestore")
+        _rebuild_quest_lookup()
+
+async def _get_or_generate_quests(language: str, level: str, count: int = 8) -> list:
+    """Get quests from Firestore, or generate with AI if none exist.
+    Falls back to hardcoded data if AI is unavailable.
+    """
+    # 1. Try Firestore cache
+    quests = await _get_quests_from_firestore(language, level)
+    if quests:
+        return quests
+
+    # 2. Try AI generation
+    generated = _generate_quests_ai(language, level, count)
+    if generated:
+        _save_generated_quests_to_firestore(generated, language, level)
+        return generated
+
+    # 3. Fallback to hardcoded data (only for languages that have it)
+    lang_quests = LANGUAGE_QUESTS.get(language, {})
+    quests = lang_quests.get(level, [])
+    if quests:
+        return quests
+
+    # 4. Last resort: return empty
+    return []
+
 @app.get("/get-quest/{skill_level}")
 async def get_quest(skill_level: str, language: Optional[str] = None):
-    """Returns a random challenge based on skill level and optional language.
-    Reads from Firestore first, falls back to hardcoded quests if Firestore is empty.
-    """
+    """Returns a random challenge. Auto-generates quests via AI for any language."""
     lang = _normalize_language(language)
-
-    # Try Firestore first
-    quests = await _get_quests_from_firestore(lang, skill_level)
-
-    # Fallback to hardcoded quests if Firestore has none
-    if not quests:
-        lang_quests = LANGUAGE_QUESTS.get(lang, LANGUAGE_QUESTS.get("python", {}))
-        quests = lang_quests.get(skill_level, lang_quests.get("Beginner", []))
+    quests = await _get_or_generate_quests(lang, skill_level)
 
     if not quests:
-        quests = CHALLENGES.get(skill_level, CHALLENGES["Beginner"])
+        raise HTTPException(status_code=404, detail=f"No quests available for {lang}/{skill_level}. Set ANTHROPIC_API_KEY to enable AI quest generation.")
 
     quest = random.choice(quests)
     return {**quest, "language": lang}
 
 @app.get("/get-quests/{skill_level}")
-async def get_quests(skill_level: str, language: Optional[str] = None, count: int = 6):
-    """Returns multiple quests for a language and skill level.
-    Used by the Quest Playground to show a list of available quests.
-    """
+async def get_quests(skill_level: str, language: Optional[str] = None, count: int = 8):
+    """Returns multiple quests. Auto-generates via AI for any detected language."""
     lang = _normalize_language(language)
-
-    # Try Firestore first
-    quests = await _get_quests_from_firestore(lang, skill_level)
-
-    # Fallback to hardcoded quests if Firestore has none
-    if not quests:
-        lang_quests = LANGUAGE_QUESTS.get(lang, LANGUAGE_QUESTS.get("python", {}))
-        quests = lang_quests.get(skill_level, lang_quests.get("Beginner", []))
-
-    if not quests:
-        quests = CHALLENGES.get(skill_level, CHALLENGES["Beginner"])
+    quests = await _get_or_generate_quests(lang, skill_level, count)
 
     # Shuffle and limit
     random.shuffle(quests)
     selected = quests[:min(count, len(quests))]
 
-    return {"quests": [{**q, "language": lang} for q in selected], "total": len(quests)}
+    return {
+        "quests": [{**q, "language": lang} for q in selected],
+        "total": len(quests),
+        "generated": any(q.get("generatedBy") == "ai" for q in selected)
+    }
 
 @app.get("/detect-language/{user_id}")
 async def detect_language(user_id: str):
-    """Detect the most-used language from a user's recent sessions.
-    Checks both extension sessions (languagesUsed) and quest sessions (language field).
-    """
+    """Detect the most-used language from a user's recent sessions."""
     try:
         lang_counts = {}
 
-        # Query recent sessions for this user
         sessions_ref = db.collection("sessions").where(
             filter=FieldFilter("userId", "==", user_id)
         )
@@ -1898,11 +2047,9 @@ async def detect_language(user_id: str):
 
         for doc in docs:
             data = doc.to_dict()
-            # Extension sessions have languagesUsed array
             for lang in data.get("languagesUsed", []):
                 normalized = _normalize_language(lang)
-                lang_counts[normalized] = lang_counts.get(normalized, 0) + 2  # weight extension sessions higher
-            # Quest/analyze sessions have a language field
+                lang_counts[normalized] = lang_counts.get(normalized, 0) + 2
             if data.get("language"):
                 normalized = _normalize_language(data["language"])
                 lang_counts[normalized] = lang_counts.get(normalized, 0) + 1
@@ -1910,45 +2057,34 @@ async def detect_language(user_id: str):
         if not lang_counts:
             return {"language": "python", "confidence": 0, "all": {}}
 
-        # Find most used language
         detected = max(lang_counts, key=lang_counts.get)
-
-        return {
-            "language": detected,
-            "confidence": lang_counts[detected],
-            "all": lang_counts
-        }
+        return {"language": detected, "confidence": lang_counts[detected], "all": lang_counts}
     except Exception as e:
         print(f"Language detection error: {e}")
         return {"language": "python", "confidence": 0, "all": {}}
 
 @app.get("/get-quest-languages")
 async def get_quest_languages():
-    """Returns the list of supported languages for quests (from Firestore + hardcoded)."""
+    """Returns languages that have quests in Firestore."""
     language_counts = {}
-
-    # Count from Firestore
     try:
-        quests_ref = db.collection("quests").stream()
-        for doc in quests_ref:
-            data = doc.to_dict()
-            lang = data.get("language", "python")
+        for doc in db.collection("quests").stream():
+            lang = doc.to_dict().get("language", "python")
             language_counts[lang] = language_counts.get(lang, 0) + 1
     except Exception as e:
-        print(f"Error fetching quest languages from Firestore: {e}")
+        print(f"Error fetching quest languages: {e}")
 
-    # If Firestore is empty, use hardcoded data
+    # Fallback to hardcoded if Firestore empty
     if not language_counts:
         for lang, levels in LANGUAGE_QUESTS.items():
-            total = sum(len(quests) for quests in levels.values())
+            total = sum(len(q) for q in levels.values())
             if total > 0:
                 language_counts[lang] = total
 
-    languages = [
+    return {"languages": [
         {"id": lang, "name": lang.capitalize(), "questCount": count}
         for lang, count in language_counts.items()
-    ]
-    return {"languages": languages}
+    ]}
 
 # --- Quest Admin CRUD ---
 
