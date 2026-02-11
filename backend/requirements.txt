@@ -1,5 +1,6 @@
 annotated-doc==0.0.4
 annotated-types==0.7.0
+anthropic
 anyio==4.11.0
 CacheControl==0.14.4
 cachetools==6.2.2
