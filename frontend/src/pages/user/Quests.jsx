@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { Brain, Trophy, Zap, ChevronLeft, Code2, Sparkles, Play, CheckCircle, XCircle, AlertTriangle, RefreshCw, Globe, ArrowLeft, Star } from "lucide-react";
+import { Brain, Trophy, Zap, ChevronLeft, Code2, Sparkles, Play, CheckCircle, XCircle, AlertTriangle, RefreshCw, Globe, ArrowLeft, Star, ShieldCheck, ShieldAlert, Eye } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Editor from "@monaco-editor/react";
@@ -277,7 +277,8 @@ const Quests = () => {
       confidence: analysis.stats?.confidence ?? 0,
       aiProbability: analysis.stats?.aiProbability ?? 0,
       xpEarned: xpAwarded ? activeQuest.xp : 0,
-      message
+      message,
+      aiDetection: analysis.stats?.aiDetection || null
     });
     setSubmitting(false);
   };
@@ -391,26 +392,82 @@ const Quests = () => {
                   )}
 
                   {result.success && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                      <div className="bg-slate-800/50 p-3 rounded-lg">
-                        <p className="text-xs text-slate-400">Detected Skill</p>
-                        <p className="text-lg font-bold text-indigo-400">{result.skillLevel}</p>
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                        <div className="bg-slate-800/50 p-3 rounded-lg">
+                          <p className="text-xs text-slate-400">Detected Skill</p>
+                          <p className="text-lg font-bold text-indigo-400">{result.skillLevel}</p>
+                        </div>
+                        <div className="bg-slate-800/50 p-3 rounded-lg">
+                          <p className="text-xs text-slate-400">Confidence</p>
+                          <p className="text-lg font-bold text-blue-400">{(result.confidence || 0).toFixed(1)}%</p>
+                        </div>
+                        <div className="bg-slate-800/50 p-3 rounded-lg">
+                          <p className="text-xs text-slate-400">AI Detection</p>
+                          <p className={`text-lg font-bold ${(result.aiProbability || 0) > 70 ? "text-red-400" : (result.aiProbability || 0) > 40 ? "text-yellow-400" : "text-green-400"}`}>
+                            {(result.aiProbability || 0).toFixed(1)}%
+                          </p>
+                        </div>
+                        <div className="bg-slate-800/50 p-3 rounded-lg">
+                          <p className="text-xs text-slate-400">XP Earned</p>
+                          <p className="text-lg font-bold text-yellow-400">+{result.xpEarned}</p>
+                        </div>
                       </div>
-                      <div className="bg-slate-800/50 p-3 rounded-lg">
-                        <p className="text-xs text-slate-400">Confidence</p>
-                        <p className="text-lg font-bold text-blue-400">{(result.confidence || 0).toFixed(1)}%</p>
-                      </div>
-                      <div className="bg-slate-800/50 p-3 rounded-lg">
-                        <p className="text-xs text-slate-400">AI Detection</p>
-                        <p className={`text-lg font-bold ${(result.aiProbability || 0) > 70 ? "text-red-400" : "text-green-400"}`}>
-                          {(result.aiProbability || 0).toFixed(1)}%
-                        </p>
-                      </div>
-                      <div className="bg-slate-800/50 p-3 rounded-lg">
-                        <p className="text-xs text-slate-400">XP Earned</p>
-                        <p className="text-lg font-bold text-yellow-400">+{result.xpEarned}</p>
-                      </div>
-                    </div>
+
+                      {/* AI Detection Signal Breakdown */}
+                      {result.aiDetection?.signals && (
+                        <div className="mt-6 bg-slate-900/60 border border-slate-700/50 rounded-xl p-5">
+                          <div className="flex items-center gap-2 mb-4">
+                            {(result.aiProbability || 0) > 50 ? (
+                              <ShieldAlert className="text-red-400" size={20} />
+                            ) : (
+                              <ShieldCheck className="text-green-400" size={20} />
+                            )}
+                            <h4 className="text-sm font-bold text-slate-200 uppercase tracking-wide">
+                              AI Detection Breakdown
+                            </h4>
+                            <span className="ml-auto text-xs text-slate-500">
+                              Confidence: {result.aiDetection.confidence}%
+                            </span>
+                          </div>
+                          <div className="space-y-3">
+                            {Object.entries(result.aiDetection.signals).map(([key, signal]) => (
+                              <div key={key} className="flex items-center gap-3">
+                                <div className="w-32 text-xs text-slate-400 flex-shrink-0">{signal.name}</div>
+                                <div className="flex-1">
+                                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all ${
+                                        signal.verdict === "ai_likely" ? "bg-red-500" :
+                                        signal.verdict === "suspicious" ? "bg-yellow-500" : "bg-green-500"
+                                      }`}
+                                      style={{ width: `${Math.min(signal.score, 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                                <span className={`text-xs font-mono w-10 text-right ${
+                                  signal.verdict === "ai_likely" ? "text-red-400" :
+                                  signal.verdict === "suspicious" ? "text-yellow-400" : "text-green-400"
+                                }`}>
+                                  {signal.score}
+                                </span>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                  signal.verdict === "ai_likely" ? "bg-red-500/20 text-red-400" :
+                                  signal.verdict === "suspicious" ? "bg-yellow-500/20 text-yellow-400" : "bg-green-500/20 text-green-400"
+                                }`}>
+                                  {signal.verdict === "ai_likely" ? "AI" : signal.verdict === "suspicious" ? "SUS" : "OK"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          {result.aiDetection.recommendation && (
+                            <p className="mt-4 text-xs text-slate-500 italic border-t border-slate-700/50 pt-3">
+                              {result.aiDetection.recommendation}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

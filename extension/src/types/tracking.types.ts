@@ -16,7 +16,15 @@ export enum EventType {
   WINDOW_BLUR = 'window_blur',
   IDLE_START = 'idle_start',
   IDLE_END = 'idle_end',
-  CODE_ANALYSIS = 'code_analysis'
+  CODE_ANALYSIS = 'code_analysis',
+  // AI Detection: Command-source events
+  CLIPBOARD_PASTE = 'clipboard_paste',
+  AUTOCOMPLETE_ACCEPT = 'autocomplete_accept',
+  COPILOT_ACCEPT = 'copilot_accept',
+  FORMAT_DOCUMENT = 'format_document',
+  UNDO = 'undo',
+  REDO = 'redo',
+  SNIPPET_INSERT = 'snippet_insert'
 }
 
 /**
@@ -44,7 +52,8 @@ export type EventDetail =
   | WindowStateDetail
   | IdleDetail
   | CodeAnalysisDetail
-  | SessionDetail;
+  | SessionDetail
+  | CommandSourceDetail;
 
 /**
  * Keystroke event details (typing detected)
@@ -202,6 +211,45 @@ export interface TrackingSession {
   status: 'active' | 'stopped' | 'uploaded' | 'error';
   uploadAttempts: number;
   lastUploadAttempt?: number;
+}
+
+/**
+ * Command-source event details (paste, autocomplete, copilot, format, undo/redo, snippet)
+ */
+export interface CommandSourceDetail {
+  source: 'clipboard' | 'autocomplete' | 'copilot' | 'formatter' | 'undo' | 'redo' | 'snippet';
+  charactersAffected?: number;
+  file?: string;
+  language?: string;
+}
+
+/**
+ * Behavioral signals aggregated for AI detection.
+ * These are physics-based signals that are hard to fake.
+ */
+export interface BehavioralSignals {
+  // Paste behavior
+  totalClipboardPastes: number;
+  totalPasteCharacters: number;
+
+  // Autocomplete / Copilot
+  totalAutocompleteAccepts: number;
+  totalCopilotAccepts: number;
+
+  // Editing patterns
+  totalUndos: number;
+  totalRedos: number;
+  totalFormatActions: number;
+  totalSnippetInserts: number;
+
+  // Typing rhythm (inter-key intervals in ms)
+  typingIntervals: number[];
+  // Burst detection: rapid sequences followed by long pauses
+  burstCount: number;
+
+  // Deletion patterns
+  totalDeletions: number;
+  deletionCharacters: number;
 }
 
 /**

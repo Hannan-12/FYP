@@ -169,7 +169,8 @@ async function syncSessionToBackend(): Promise<void> {
     activeDuration: activeDuration / 1000,
     idleDuration: idleDuration / 1000,
     filesEdited: session.filesEdited || [],
-    languagesUsed: session.languagesUsed || []
+    languagesUsed: session.languagesUsed || [],
+    behavioralSignals: trackingService.getBehavioralSignals()
   };
 
   const success = await apiService.updateSession(backendSessionId, updateData);
@@ -211,7 +212,8 @@ async function endBackendSession(): Promise<void> {
     activeDuration: activeDuration / 1000,
     idleDuration: idleDuration / 1000,
     filesEdited: session?.filesEdited || [],
-    languagesUsed: session?.languagesUsed || []
+    languagesUsed: session?.languagesUsed || [],
+    behavioralSignals: trackingService.getBehavioralSignals()
   };
 
   const success = await apiService.endSession(backendSessionId, endData);

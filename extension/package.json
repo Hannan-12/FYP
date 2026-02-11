@@ -46,6 +46,48 @@
       {
         "command": "devskill-tracker.analyzeFile",
         "title": "DevSkill: Analyze Current File"
+      },
+      {
+        "command": "devskill-tracker.interceptPaste",
+        "title": "DevSkill: Paste (intercepted)"
+      },
+      {
+        "command": "devskill-tracker.interceptUndo",
+        "title": "DevSkill: Undo (intercepted)"
+      },
+      {
+        "command": "devskill-tracker.interceptRedo",
+        "title": "DevSkill: Redo (intercepted)"
+      },
+      {
+        "command": "devskill-tracker.interceptFormat",
+        "title": "DevSkill: Format Document (intercepted)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "devskill-tracker.interceptPaste",
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "devskill-tracker.interceptUndo",
+        "key": "ctrl+z",
+        "mac": "cmd+z",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "devskill-tracker.interceptRedo",
+        "key": "ctrl+y",
+        "mac": "cmd+shift+z",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "devskill-tracker.interceptFormat",
+        "key": "shift+alt+f",
+        "mac": "shift+alt+f",
+        "when": "editorTextFocus"
       }
     ],
     "configuration": {

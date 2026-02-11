@@ -10,6 +10,8 @@ import joblib
 import random
 import uuid
 import json
+import math
+import statistics
 
 cred_path = "firebase_config/serviceAccountKey.json"
 
@@ -1636,6 +1638,20 @@ class SessionStartRequest(BaseModel):
     email: str
     language: Optional[str] = None
 
+class BehavioralSignalsModel(BaseModel):
+    totalClipboardPastes: int = 0
+    totalPasteCharacters: int = 0
+    totalAutocompleteAccepts: int = 0
+    totalCopilotAccepts: int = 0
+    totalUndos: int = 0
+    totalRedos: int = 0
+    totalFormatActions: int = 0
+    totalSnippetInserts: int = 0
+    typingIntervals: List[float] = []
+    burstCount: int = 0
+    totalDeletions: int = 0
+    deletionCharacters: int = 0
+
 class SessionUpdateRequest(BaseModel):
     totalKeystrokes: int = 0
     totalPastes: int = 0
@@ -1644,6 +1660,7 @@ class SessionUpdateRequest(BaseModel):
     idleDuration: float = 0
     filesEdited: List[str] = []
     languagesUsed: List[str] = []
+    behavioralSignals: Optional[BehavioralSignalsModel] = None
 
 class SessionEndRequest(BaseModel):
     totalKeystrokes: int = 0
@@ -1654,6 +1671,322 @@ class SessionEndRequest(BaseModel):
     idleDuration: float = 0
     filesEdited: List[str] = []
     languagesUsed: List[str] = []
+    behavioralSignals: Optional[BehavioralSignalsModel] = None
+
+class AIDetectRequest(BaseModel):
+    sessionId: str
+
+# --- AI Detection Engine (Physics-Based Behavioral Analysis) ---
+
+class AIDetectionEngine:
+    """
+    Multi-signal behavioral AI detection engine.
+    Uses physics-based signals (typing patterns, paste behavior, editing rhythm)
+    to determine likelihood that code was AI-generated.
+
+    Each signal produces a score 0-100 and a verdict: 'human', 'suspicious', 'ai_likely'.
+    Signals are weighted and combined for a final AI likelihood score.
+    """
+
+    # Signal weights (must sum to ~1.0)
+    WEIGHTS = {
+        "typing_speed": 0.15,
+        "paste_ratio": 0.20,
+        "typing_rhythm": 0.15,
+        "deletion_ratio": 0.10,
+        "burst_pattern": 0.10,
+        "copilot_usage": 0.15,
+        "undo_redo_ratio": 0.05,
+        "idle_ratio": 0.10,
+    }
+
+    @staticmethod
+    def analyze(session_data: dict) -> dict:
+        """
+        Analyze a session and return AI detection results.
+
+        Args:
+            session_data: dict with keys:
+                - totalKeystrokes, totalPastes, totalEdits
+                - activeDuration, idleDuration, totalDuration
+                - behavioralSignals (optional): dict with typing intervals, paste counts, etc.
+
+        Returns:
+            dict with aiLikelihoodScore, confidence, signals breakdown, recommendation
+        """
+        signals = {}
+        bs = session_data.get("behavioralSignals", {}) or {}
+
+        total_keystrokes = session_data.get("totalKeystrokes", 0)
+        total_pastes = session_data.get("totalPastes", 0)
+        total_edits = session_data.get("totalEdits", 0)
+        active_duration = session_data.get("activeDuration", 0)
+        idle_duration = session_data.get("idleDuration", 0)
+        total_duration = session_data.get("totalDuration", 0) or (active_duration + idle_duration)
+
+        # --- Signal 1: Typing Speed (characters per second) ---
+        cps = total_keystrokes / (active_duration + 0.1) if active_duration > 0 else 0
+        if cps > 8.0:
+            ts_score, ts_verdict = 95, "ai_likely"
+        elif cps > 5.0:
+            ts_score, ts_verdict = 75, "ai_likely"
+        elif cps > 3.5:
+            ts_score, ts_verdict = 40, "suspicious"
+        elif cps > 1.5:
+            ts_score, ts_verdict = 10, "human"
+        else:
+            # Very slow — either beginner or idle time not properly tracked
+            ts_score, ts_verdict = 15, "human"
+
+        signals["typing_speed"] = {
+            "name": "Typing Speed",
+            "value": round(cps, 2),
+            "score": ts_score,
+            "weight": AIDetectionEngine.WEIGHTS["typing_speed"],
+            "description": f"{cps:.1f} chars/sec — avg human is 2-4 cps",
+            "verdict": ts_verdict
+        }
+
+        # --- Signal 2: Paste Ratio (pasted chars vs total input) ---
+        clipboard_pastes = bs.get("totalClipboardPastes", 0)
+        paste_chars = bs.get("totalPasteCharacters", 0)
+        total_input = total_keystrokes + paste_chars + 0.1
+        paste_ratio = paste_chars / total_input if total_input > 0 else 0
+
+        if paste_ratio > 0.8:
+            pr_score, pr_verdict = 95, "ai_likely"
+        elif paste_ratio > 0.5:
+            pr_score, pr_verdict = 70, "ai_likely"
+        elif paste_ratio > 0.3:
+            pr_score, pr_verdict = 40, "suspicious"
+        elif paste_ratio > 0.1:
+            pr_score, pr_verdict = 15, "human"
+        else:
+            pr_score, pr_verdict = 5, "human"
+
+        signals["paste_ratio"] = {
+            "name": "Paste Ratio",
+            "value": round(paste_ratio * 100, 1),
+            "score": pr_score,
+            "weight": AIDetectionEngine.WEIGHTS["paste_ratio"],
+            "description": f"{paste_ratio*100:.0f}% of code was pasted ({clipboard_pastes} paste actions, {paste_chars} chars)",
+            "verdict": pr_verdict
+        }
+
+        # --- Signal 3: Typing Rhythm Consistency ---
+        # Humans have variable inter-key intervals. AI paste = no intervals or very uniform bursts.
+        typing_intervals = bs.get("typingIntervals", [])
+        cv = 0.0
+        if len(typing_intervals) >= 10:
+            mean_interval = statistics.mean(typing_intervals)
+            stdev_interval = statistics.stdev(typing_intervals)
+            cv = stdev_interval / (mean_interval + 0.1)  # coefficient of variation
+
+            # Humans typically have CV > 0.6 (high variability)
+            # AI-assisted: fewer intervals, or very uniform
+            if cv < 0.3:
+                tr_score, tr_verdict = 80, "ai_likely"
+            elif cv < 0.5:
+                tr_score, tr_verdict = 50, "suspicious"
+            elif cv < 0.8:
+                tr_score, tr_verdict = 20, "human"
+            else:
+                tr_score, tr_verdict = 5, "human"
+
+            tr_desc = f"Rhythm variability: {cv:.2f} (CV) — humans typically >0.6"
+        else:
+            # Too few intervals — suspicious if session produced lots of code
+            if total_keystrokes > 200:
+                tr_score, tr_verdict = 60, "suspicious"
+                tr_desc = f"Only {len(typing_intervals)} typing intervals for {total_keystrokes} keystrokes — most code may have been pasted"
+            else:
+                tr_score, tr_verdict = 20, "human"
+                tr_desc = f"Short session ({len(typing_intervals)} intervals) — insufficient data"
+
+        signals["typing_rhythm"] = {
+            "name": "Typing Rhythm",
+            "value": round(cv, 2) if len(typing_intervals) >= 10 else 0,
+            "score": tr_score,
+            "weight": AIDetectionEngine.WEIGHTS["typing_rhythm"],
+            "description": tr_desc,
+            "verdict": tr_verdict
+        }
+
+        # --- Signal 4: Deletion Ratio ---
+        # Humans delete/correct frequently. AI-generated code is pasted clean.
+        total_deletions = bs.get("totalDeletions", 0)
+        deletion_chars = bs.get("deletionCharacters", 0)
+        deletion_ratio = total_deletions / (total_edits + 0.1) if total_edits > 0 else 0
+
+        if total_edits < 5:
+            dr_score, dr_verdict = 30, "suspicious"
+            dr_desc = "Too few edits to analyze deletion patterns"
+        elif deletion_ratio < 0.05:
+            dr_score, dr_verdict = 70, "ai_likely"
+            dr_desc = f"Almost no deletions ({deletion_ratio*100:.0f}%) — AI code is usually pasted clean"
+        elif deletion_ratio < 0.15:
+            dr_score, dr_verdict = 40, "suspicious"
+            dr_desc = f"Low deletion rate ({deletion_ratio*100:.0f}%) — below typical human range"
+        elif deletion_ratio < 0.4:
+            dr_score, dr_verdict = 10, "human"
+            dr_desc = f"Normal deletion rate ({deletion_ratio*100:.0f}%) — consistent with human editing"
+        else:
+            dr_score, dr_verdict = 5, "human"
+            dr_desc = f"High deletion rate ({deletion_ratio*100:.0f}%) — lots of trial-and-error (human)"
+
+        signals["deletion_ratio"] = {
+            "name": "Deletion Pattern",
+            "value": round(deletion_ratio * 100, 1),
+            "score": dr_score,
+            "weight": AIDetectionEngine.WEIGHTS["deletion_ratio"],
+            "description": dr_desc,
+            "verdict": dr_verdict
+        }
+
+        # --- Signal 5: Burst Pattern ---
+        # Rapid typing bursts followed by long pauses suggest copy-paste-modify pattern
+        burst_count = bs.get("burstCount", 0)
+        if burst_count >= 5:
+            bp_score, bp_verdict = 80, "ai_likely"
+            bp_desc = f"{burst_count} burst patterns — rapid typing then long pauses (copy-paste-modify)"
+        elif burst_count >= 2:
+            bp_score, bp_verdict = 45, "suspicious"
+            bp_desc = f"{burst_count} burst patterns detected"
+        else:
+            bp_score, bp_verdict = 10, "human"
+            bp_desc = f"No significant burst patterns — steady coding rhythm"
+
+        signals["burst_pattern"] = {
+            "name": "Burst Pattern",
+            "value": burst_count,
+            "score": bp_score,
+            "weight": AIDetectionEngine.WEIGHTS["burst_pattern"],
+            "description": bp_desc,
+            "verdict": bp_verdict
+        }
+
+        # --- Signal 6: Copilot / AI Tool Usage ---
+        copilot_accepts = bs.get("totalCopilotAccepts", 0)
+        autocomplete_accepts = bs.get("totalAutocompleteAccepts", 0)
+        # Copilot is a direct AI signal. Autocomplete is normal IDE behavior.
+        if copilot_accepts > 10:
+            cu_score, cu_verdict = 90, "ai_likely"
+            cu_desc = f"{copilot_accepts} Copilot suggestions accepted — heavy AI assistance"
+        elif copilot_accepts > 3:
+            cu_score, cu_verdict = 60, "suspicious"
+            cu_desc = f"{copilot_accepts} Copilot suggestions accepted"
+        elif copilot_accepts > 0:
+            cu_score, cu_verdict = 30, "suspicious"
+            cu_desc = f"{copilot_accepts} Copilot suggestion(s) — some AI assistance"
+        else:
+            cu_score, cu_verdict = 5, "human"
+            cu_desc = "No AI tool usage detected"
+
+        signals["copilot_usage"] = {
+            "name": "AI Tool Usage",
+            "value": copilot_accepts,
+            "score": cu_score,
+            "weight": AIDetectionEngine.WEIGHTS["copilot_usage"],
+            "description": cu_desc,
+            "verdict": cu_verdict
+        }
+
+        # --- Signal 7: Undo/Redo Ratio ---
+        # Humans undo frequently while experimenting. Pure AI paste = no undos.
+        total_undos = bs.get("totalUndos", 0)
+        total_redos = bs.get("totalRedos", 0)
+        undo_ratio = total_undos / (total_edits + 0.1) if total_edits > 0 else 0
+
+        if total_edits < 5:
+            ur_score, ur_verdict = 25, "suspicious"
+            ur_desc = "Too few edits to evaluate undo patterns"
+        elif undo_ratio < 0.02:
+            ur_score, ur_verdict = 55, "suspicious"
+            ur_desc = f"Almost no undos ({total_undos}) — may indicate pre-written code"
+        elif undo_ratio < 0.1:
+            ur_score, ur_verdict = 15, "human"
+            ur_desc = f"Normal undo rate ({total_undos} undos) — consistent with human coding"
+        else:
+            ur_score, ur_verdict = 5, "human"
+            ur_desc = f"High undo rate ({total_undos} undos) — lots of experimentation (human)"
+
+        signals["undo_redo_ratio"] = {
+            "name": "Undo/Redo Pattern",
+            "value": total_undos,
+            "score": ur_score,
+            "weight": AIDetectionEngine.WEIGHTS["undo_redo_ratio"],
+            "description": ur_desc,
+            "verdict": ur_verdict
+        }
+
+        # --- Signal 8: Idle Ratio ---
+        # Humans think, read docs, switch context. Pure AI use = minimal idle time.
+        idle_ratio = idle_duration / (total_duration + 0.1) if total_duration > 0 else 0
+
+        if total_duration < 30:
+            ir_score, ir_verdict = 50, "suspicious"
+            ir_desc = "Very short session — insufficient data for idle analysis"
+        elif idle_ratio < 0.05:
+            ir_score, ir_verdict = 50, "suspicious"
+            ir_desc = f"Almost no thinking time ({idle_ratio*100:.0f}% idle) — code produced with minimal pauses"
+        elif idle_ratio < 0.15:
+            ir_score, ir_verdict = 25, "human"
+            ir_desc = f"Low idle time ({idle_ratio*100:.0f}%) — focused but could be normal"
+        elif idle_ratio < 0.5:
+            ir_score, ir_verdict = 10, "human"
+            ir_desc = f"Normal idle pattern ({idle_ratio*100:.0f}%) — reading, thinking, planning"
+        else:
+            ir_score, ir_verdict = 10, "human"
+            ir_desc = f"High idle time ({idle_ratio*100:.0f}%) — lots of reading/thinking"
+
+        signals["idle_ratio"] = {
+            "name": "Thinking Time",
+            "value": round(idle_ratio * 100, 1),
+            "score": ir_score,
+            "weight": AIDetectionEngine.WEIGHTS["idle_ratio"],
+            "description": ir_desc,
+            "verdict": ir_verdict
+        }
+
+        # --- Combine Signals into Final Score ---
+        weighted_sum = 0
+        total_weight = 0
+        for key, signal in signals.items():
+            w = signal["weight"]
+            weighted_sum += signal["score"] * w
+            total_weight += w
+
+        ai_likelihood = weighted_sum / total_weight if total_weight > 0 else 0
+        ai_likelihood = min(100, max(0, round(ai_likelihood, 1)))
+
+        # Confidence: higher if we have more behavioral data
+        has_intervals = len(typing_intervals) >= 10
+        has_behavioral = bool(bs)
+        data_points = sum([
+            has_intervals,
+            has_behavioral,
+            total_edits > 10,
+            active_duration > 60,
+            total_keystrokes > 50
+        ])
+        confidence = min(95, data_points * 19)
+
+        # Recommendation
+        if ai_likelihood >= 70:
+            recommendation = "High likelihood of AI-generated code. Review behavioral signals for details."
+        elif ai_likelihood >= 40:
+            recommendation = "Moderate AI indicators detected. Some code may be AI-assisted."
+        else:
+            recommendation = "Code appears to be human-written based on behavioral analysis."
+
+        return {
+            "status": "success",
+            "aiLikelihoodScore": ai_likelihood,
+            "confidence": confidence,
+            "signals": signals,
+            "recommendation": recommendation
+        }
+
 
 # --- API Endpoints ---
 
@@ -1738,6 +2071,8 @@ async def session_update(session_id: str, req: SessionUpdateRequest):
             "languagesUsed": req.languagesUsed,
             "lastUpdated": firestore.SERVER_TIMESTAMP,
         }
+        if req.behavioralSignals:
+            update_data["behavioralSignals"] = req.behavioralSignals.dict()
         doc_ref.update(update_data)
         return {"status": "success", "sessionId": session_id}
     except HTTPException:
@@ -1768,13 +2103,18 @@ async def session_end(session_id: str, req: SessionEndRequest):
         elif any(l in intermediate_langs for l in used_lower) or num_files >= 3 or req.totalKeystrokes > 500:
             skill_level = "Intermediate"
 
-        # Calculate AI probability from typing patterns
-        cps = req.totalKeystrokes / (req.activeDuration + 1) if req.activeDuration else 0
-        ai_probability = 12.5
-        if cps > 5.0:
-            ai_probability = 85.0
-        elif cps > 3.0:
-            ai_probability = 45.0
+        # Run AI Detection Engine with behavioral signals
+        detection_input = {
+            "totalKeystrokes": req.totalKeystrokes,
+            "totalPastes": req.totalPastes,
+            "totalEdits": req.totalEdits,
+            "activeDuration": req.activeDuration,
+            "idleDuration": req.idleDuration,
+            "totalDuration": req.totalDuration,
+            "behavioralSignals": req.behavioralSignals.dict() if req.behavioralSignals else {}
+        }
+        detection_result = AIDetectionEngine.analyze(detection_input)
+        ai_probability = detection_result["aiLikelihoodScore"]
 
         update_data = {
             "status": "completed",
@@ -1794,8 +2134,16 @@ async def session_end(session_id: str, req: SessionEndRequest):
                 "aiProbability": ai_probability,
                 "filesCount": num_files,
                 "languageCount": num_languages,
+            },
+            "aiDetection": {
+                "aiLikelihoodScore": detection_result["aiLikelihoodScore"],
+                "confidence": detection_result["confidence"],
+                "signals": detection_result["signals"],
+                "recommendation": detection_result["recommendation"]
             }
         }
+        if req.behavioralSignals:
+            update_data["behavioralSignals"] = req.behavioralSignals.dict()
         doc_ref.update(update_data)
         return {"status": "success", "sessionId": session_id}
     except HTTPException:
@@ -2260,6 +2608,45 @@ def _rebuild_quest_lookup():
     except Exception as e:
         print(f"Rebuild quest lookup error: {e}")
 
+# --- AI Detection Endpoint ---
+
+@app.post("/detect-ai/{session_id}")
+async def detect_ai(session_id: str):
+    """
+    Run AI detection analysis on an existing session.
+    Reads session data + behavioral signals from Firestore and returns full signal breakdown.
+    """
+    try:
+        doc_ref = db.collection("sessions").document(session_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        session_data = doc.to_dict()
+        detection_input = {
+            "totalKeystrokes": session_data.get("totalKeystrokes", 0),
+            "totalPastes": session_data.get("totalPastes", 0),
+            "totalEdits": session_data.get("totalEdits", 0),
+            "activeDuration": session_data.get("activeDuration", 0),
+            "idleDuration": session_data.get("idleDuration", 0),
+            "totalDuration": session_data.get("totalDuration", 0),
+            "behavioralSignals": session_data.get("behavioralSignals", {})
+        }
+
+        result = AIDetectionEngine.analyze(detection_input)
+
+        # Store result back in session
+        doc_ref.update({"aiDetection": result})
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"AI Detection error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # --- Code Analysis ---
 
 @app.post("/analyze")
@@ -2278,13 +2665,19 @@ async def analyze_code(session: CodeSession):
             elif "def " in session.code or "import " in session.code:
                 skill_level = "Intermediate"
 
-        cps = session.keystrokes / (session.duration + 1)
-        ai_probability = 12.5
-
-        if cps > 5.0:
-            ai_probability = 85.0
-        elif cps > 3.0:
-            ai_probability = 45.0
+        # Use AI Detection Engine for quest submissions too
+        # For quests, we only have duration + keystrokes (no full behavioral signals)
+        detection_input = {
+            "totalKeystrokes": session.keystrokes,
+            "totalPastes": 0,
+            "totalEdits": 0,
+            "activeDuration": session.duration,
+            "idleDuration": 0,
+            "totalDuration": session.duration,
+            "behavioralSignals": {}
+        }
+        detection_result = AIDetectionEngine.analyze(detection_input)
+        ai_probability = detection_result["aiLikelihoodScore"]
 
         # Validate solution if questId is provided
         validation = {"passed": True, "tests_passed": 0, "tests_total": 0, "message": "No validation", "details": []}
@@ -2310,6 +2703,12 @@ async def analyze_code(session: CodeSession):
                 "passed": validation["passed"],
                 "testsPassed": validation["tests_passed"],
                 "testsTotal": validation["tests_total"]
+            },
+            "aiDetection": {
+                "aiLikelihoodScore": detection_result["aiLikelihoodScore"],
+                "confidence": detection_result["confidence"],
+                "signals": detection_result["signals"],
+                "recommendation": detection_result["recommendation"]
             }
         }
 
@@ -2325,7 +2724,13 @@ async def analyze_code(session: CodeSession):
                 "testsPassed": validation["tests_passed"],
                 "testsTotal": validation["tests_total"],
                 "validationMessage": validation["message"],
-                "validationDetails": validation["details"]
+                "validationDetails": validation["details"],
+                "aiDetection": {
+                    "aiLikelihoodScore": detection_result["aiLikelihoodScore"],
+                    "confidence": detection_result["confidence"],
+                    "signals": detection_result["signals"],
+                    "recommendation": detection_result["recommendation"]
+                }
             }
         }
 
