@@ -3,7 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
 import { motion } from "framer-motion";
-import { ChevronLeft, Clock, Code2, Calendar, TrendingUp, CheckCircle, XCircle } from "lucide-react";
+import { ChevronLeft, Clock, Code2, Calendar, TrendingUp, CheckCircle, XCircle, ShieldCheck, ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const MySessions = () => {
@@ -220,11 +220,18 @@ const MySessions = () => {
 
                     {session.stats?.aiProbability != null && (
                       <div className="text-right">
-                        <p className="text-xs text-slate-500">Authenticity</p>
+                        <p className="text-xs text-slate-500 flex items-center gap-1 justify-end">
+                          {(session.stats?.aiProbability || 0) > 50
+                            ? <ShieldAlert size={12} className="text-red-400" />
+                            : <ShieldCheck size={12} className="text-green-400" />
+                          }
+                          AI Score
+                        </p>
                         <span className={`text-lg font-bold ${
-                          (session.stats?.aiProbability || 0) > 50 ? 'text-red-400' : 'text-green-400'
+                          (session.stats?.aiProbability || 0) > 70 ? 'text-red-400' :
+                          (session.stats?.aiProbability || 0) > 40 ? 'text-yellow-400' : 'text-green-400'
                         }`}>
-                          {`${(100 - session.stats.aiProbability).toFixed(0)}%`}
+                          {(session.stats.aiProbability).toFixed(0)}%
                         </span>
                       </div>
                     )}
