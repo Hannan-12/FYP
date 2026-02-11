@@ -1,6 +1,6 @@
 // src/types/api.types.ts
 
-import { TrackingSession, TrackingEvent, FileMetrics } from './tracking.types';
+import { TrackingSession, TrackingEvent, FileMetrics, BehavioralSignals } from './tracking.types';
 import { AnalysisRequest } from './analysis.types';
 
 /**
@@ -136,6 +136,7 @@ export interface SessionUpdateRequest {
   idleDuration: number;
   filesEdited: string[];
   languagesUsed: string[];
+  behavioralSignals?: BehavioralSignals;
 }
 
 /**
@@ -150,6 +151,7 @@ export interface SessionEndRequest {
   idleDuration: number;
   filesEdited: string[];
   languagesUsed: string[];
+  behavioralSignals?: BehavioralSignals;
 }
 
 /**
@@ -159,6 +161,18 @@ export interface AIDetectionResponse {
   status: string;
   aiLikelihoodScore: number;  // 0-100 percentage
   confidence: number;          // 0-100 percentage
-  signals: Record<string, { value?: number; score: number; [key: string]: any }>;
+  signals: Record<string, AIDetectionSignal>;
   recommendation: string;
+}
+
+/**
+ * Individual signal in AI detection breakdown
+ */
+export interface AIDetectionSignal {
+  name: string;
+  value: number;
+  score: number;          // 0-100 contribution to overall AI score
+  weight: number;         // How much this signal matters (0-1)
+  description: string;    // Human-readable explanation
+  verdict: 'human' | 'suspicious' | 'ai_likely';
 }
