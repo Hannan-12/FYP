@@ -15,7 +15,9 @@ import {
   WindowStateDetail,
   IdleDetail,
   CodeAnalysisDetail,
-  CodeFeatures
+  CodeFeatures,
+  CommandSourceDetail,
+  BehavioralSignals
 } from '../types';
 import { StorageService } from './StorageService';
 import { ConfigService } from './ConfigService';
@@ -39,6 +41,12 @@ export class TrackingService {
   private currentFile: string | null = null;
   private currentLanguage: string | null = null;
   private lastTextChangeTime = 0;
+
+  // Behavioral signals for AI detection
+  private behavioralSignals: BehavioralSignals = this.createEmptySignals();
+  private lastKeystrokeTime = 0;
+  private pendingPasteFromClipboard = false;
+  private pendingFormatAction = false;
 
   constructor(
     private storage: StorageService,
@@ -82,6 +90,8 @@ export class TrackingService {
 
     this.lastActivity = Date.now();
     this.keystrokeCount = 0;
+    this.behavioralSignals = this.createEmptySignals();
+    this.lastKeystrokeTime = 0;
 
     // Record session start event
     this.recordEvent({
@@ -194,7 +204,50 @@ export class TrackingService {
       this.handleWindowStateChange(state);
     });
 
-    this.disposables.push(textChange, editorChange, openDoc, closeDoc, windowState);
+    // --- Command Hooks for AI Detection ---
+
+    // Intercept clipboard paste (Ctrl+V / Cmd+V)
+    const pasteCmd = vscode.commands.registerCommand('devskill-tracker.interceptPaste', async () => {
+      if (this.running) {
+        this.pendingPasteFromClipboard = true;
+        this.behavioralSignals.totalClipboardPastes++;
+        const clipText = await vscode.env.clipboard.readText();
+        this.behavioralSignals.totalPasteCharacters += clipText.length;
+        this.recordCommandEvent('clipboard', clipText.length);
+      }
+      // Execute the real paste
+      await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
+    });
+
+    // Intercept undo
+    const undoCmd = vscode.commands.registerCommand('devskill-tracker.interceptUndo', async () => {
+      if (this.running) {
+        this.behavioralSignals.totalUndos++;
+        this.recordCommandEvent('undo');
+      }
+      await vscode.commands.executeCommand('default:undo');
+    });
+
+    // Intercept redo
+    const redoCmd = vscode.commands.registerCommand('devskill-tracker.interceptRedo', async () => {
+      if (this.running) {
+        this.behavioralSignals.totalRedos++;
+        this.recordCommandEvent('redo');
+      }
+      await vscode.commands.executeCommand('default:redo');
+    });
+
+    // Intercept format document
+    const formatCmd = vscode.commands.registerCommand('devskill-tracker.interceptFormat', async () => {
+      if (this.running) {
+        this.pendingFormatAction = true;
+        this.behavioralSignals.totalFormatActions++;
+        this.recordCommandEvent('formatter');
+      }
+      await vscode.commands.executeCommand('editor.action.formatDocument');
+    });
+
+    this.disposables.push(textChange, editorChange, openDoc, closeDoc, windowState, pasteCmd, undoCmd, redoCmd, formatCmd);
   }
 
   /**
@@ -240,6 +293,42 @@ export class TrackingService {
     }
 
     if (totalAdded === 0 && totalDeleted === 0) {
+      return;
+    }
+
+    // Track deletion patterns for AI detection
+    if (totalDeleted > 0) {
+      this.behavioralSignals.totalDeletions++;
+      this.behavioralSignals.deletionCharacters += totalDeleted;
+    }
+
+    // Track typing intervals (inter-key delay) for rhythm analysis
+    if (totalAdded > 0 && totalAdded <= 5 && this.lastKeystrokeTime > 0) {
+      const interval = now - this.lastKeystrokeTime;
+      if (interval < 5000) { // Only track sub-5s intervals
+        this.behavioralSignals.typingIntervals.push(interval);
+        // Keep last 500 intervals to limit memory
+        if (this.behavioralSignals.typingIntervals.length > 500) {
+          this.behavioralSignals.typingIntervals = this.behavioralSignals.typingIntervals.slice(-500);
+        }
+      }
+    }
+    if (totalAdded > 0 && totalAdded <= 5) {
+      this.lastKeystrokeTime = now;
+    }
+
+    // Check if this text change was triggered by a clipboard paste command
+    if (this.pendingPasteFromClipboard) {
+      this.pendingPasteFromClipboard = false;
+      // Already tracked in interceptPaste, skip normal paste detection
+    }
+
+    // Check if this was from a format action
+    if (this.pendingFormatAction) {
+      this.pendingFormatAction = false;
+      // Don't count formatted changes as keystrokes or pastes
+      this.lastTextChangeTime = now;
+      this.markActivity();
       return;
     }
 
@@ -812,6 +901,105 @@ export class TrackingService {
     }
 
     return this.analyzeFile(editor.document);
+  }
+
+  /**
+   * Record a command-source event (paste, undo, redo, format, copilot, autocomplete, snippet)
+   */
+  private recordCommandEvent(source: CommandSourceDetail['source'], charactersAffected?: number): void {
+    const detail: CommandSourceDetail = {
+      source,
+      charactersAffected,
+      file: this.currentFile ?? undefined,
+      language: this.currentLanguage ?? undefined
+    };
+
+    const typeMap: Record<string, EventType> = {
+      clipboard: EventType.CLIPBOARD_PASTE,
+      autocomplete: EventType.AUTOCOMPLETE_ACCEPT,
+      copilot: EventType.COPILOT_ACCEPT,
+      formatter: EventType.FORMAT_DOCUMENT,
+      undo: EventType.UNDO,
+      redo: EventType.REDO,
+      snippet: EventType.SNIPPET_INSERT
+    };
+
+    this.recordEvent({
+      timestamp: Date.now(),
+      type: typeMap[source] || EventType.TEXT_EDIT,
+      detail
+    });
+
+    this.markActivity();
+  }
+
+  /**
+   * Track an inline completion acceptance (e.g., Copilot or IntelliSense).
+   * Called externally from extension.ts when we detect these events.
+   */
+  trackCompletionAccept(source: 'autocomplete' | 'copilot', characters: number): void {
+    if (!this.running) return;
+
+    if (source === 'copilot') {
+      this.behavioralSignals.totalCopilotAccepts++;
+    } else {
+      this.behavioralSignals.totalAutocompleteAccepts++;
+    }
+    this.recordCommandEvent(source, characters);
+  }
+
+  /**
+   * Create empty behavioral signals object
+   */
+  private createEmptySignals(): BehavioralSignals {
+    return {
+      totalClipboardPastes: 0,
+      totalPasteCharacters: 0,
+      totalAutocompleteAccepts: 0,
+      totalCopilotAccepts: 0,
+      totalUndos: 0,
+      totalRedos: 0,
+      totalFormatActions: 0,
+      totalSnippetInserts: 0,
+      typingIntervals: [],
+      burstCount: 0,
+      totalDeletions: 0,
+      deletionCharacters: 0
+    };
+  }
+
+  /**
+   * Get current behavioral signals (for sending to backend)
+   */
+  getBehavioralSignals(): BehavioralSignals {
+    // Calculate burst count before returning
+    this.behavioralSignals.burstCount = this.calculateBurstCount();
+    return { ...this.behavioralSignals };
+  }
+
+  /**
+   * Detect typing bursts: rapid sequences followed by long pauses.
+   * A "burst" = 10+ keystrokes with <200ms intervals, followed by >3s pause.
+   * This pattern suggests copy-paste-modify or AI-generate-then-edit.
+   */
+  private calculateBurstCount(): number {
+    const intervals = this.behavioralSignals.typingIntervals;
+    if (intervals.length < 15) return 0;
+
+    let bursts = 0;
+    let rapidStreak = 0;
+
+    for (let i = 0; i < intervals.length; i++) {
+      if (intervals[i] < 200) {
+        rapidStreak++;
+      } else if (intervals[i] > 3000 && rapidStreak >= 10) {
+        bursts++;
+        rapidStreak = 0;
+      } else {
+        rapidStreak = 0;
+      }
+    }
+    return bursts;
   }
 
   /**
