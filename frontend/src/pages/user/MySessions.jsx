@@ -3,7 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
 import { motion } from "framer-motion";
-import { ChevronLeft, Clock, Code2, Calendar, TrendingUp, CheckCircle, XCircle, ShieldCheck, ShieldAlert } from "lucide-react";
+import { ChevronLeft, Clock, Code2, Calendar, TrendingUp, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const MySessions = () => {
@@ -235,6 +235,16 @@ const MySessions = () => {
                         </span>
                       </div>
                     )}
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/user/session/${session.id}`);
+                      }}
+                      className="flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300 transition font-medium"
+                    >
+                      View Details <ChevronRight size={16} />
+                    </button>
                   </div>
                 </div>
               </motion.div>

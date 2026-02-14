@@ -22,6 +22,7 @@ import UserProfile from "./pages/user/UserProfile";
 import Progress from "./pages/user/Progress";
 import Quests from "./pages/user/Quests";
 import MySessions from "./pages/user/MySessions";
+import UserSessionDetail from "./pages/user/UserSessionDetail";
 
 function App() {
   return (
@@ -45,6 +46,7 @@ function App() {
             <Route path="quests" element={<Quests />} />
             <Route path="progress" element={<Progress />} />
             <Route path="history" element={<MySessions />} />
+            <Route path="session/:id" element={<UserSessionDetail />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
 
