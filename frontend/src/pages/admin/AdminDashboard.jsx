@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../../firebase/config";
 import { collection, onSnapshot, query, orderBy, limit, getDocs } from "firebase/firestore";
-import { Users, Code, Brain, AlertTriangle, ChevronRight } from "lucide-react";
+import { Users, Code, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 
 const StatCard = ({ title, value, icon: Icon, color, delay }) => (
@@ -28,19 +28,14 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ totalStudents: 0, totalSessions: 0, aiDetections: 0, criticalFlags: 0 });
+  const [stats, setStats] = useState({ totalStudents: 0, totalSessions: 0 });
 
   useEffect(() => {
     const processData = (sessionData) => {
       setSessions(sessionData);
-      const aiCount = sessionData.filter(s => s.stats?.aiProbability > 50).length;
-      const flags = sessionData.filter(s => s.stats?.aiProbability > 80).length;
-
       setStats({
         totalStudents: new Set(sessionData.map(s => s.userId)).size,
-        totalSessions: sessionData.length,
-        aiDetections: aiCount,
-        criticalFlags: flags
+        totalSessions: sessionData.length
       });
       setLoading(false);
     };
@@ -80,11 +75,9 @@ const AdminDashboard = () => {
       </div>
       
       {/* Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <StatCard title="Total Students" value={stats.totalStudents} icon={Users} color="bg-blue-500" delay={0.1} />
         <StatCard title="Total Sessions" value={stats.totalSessions} icon={Code} color="bg-emerald-500" delay={0.2} />
-        <StatCard title="High AI Prob > 50%" value={stats.aiDetections} icon={Brain} color="bg-purple-500" delay={0.3} />
-        <StatCard title="Critical > 80%" value={stats.criticalFlags} icon={AlertTriangle} color="bg-red-500" delay={0.4} />
       </div>
 
       {/* Recent Activity Table */}
@@ -108,7 +101,6 @@ const AdminDashboard = () => {
               <tr>
                 <th className="p-4 pl-6">User</th>
                 <th className="p-4">Skill Level</th>
-                <th className="p-4">AI Probability</th>
                 <th className="p-4">Language</th>
                 <th className="p-4 text-right pr-6">Action</th>
               </tr>
@@ -129,17 +121,6 @@ const AdminDashboard = () => {
                     }`}>
                       {session.stats?.skillLevel || 'N/A'}
                     </span>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-24 bg-slate-700 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${(session.stats?.aiProbability || 0) > 50 ? 'bg-red-500' : 'bg-emerald-500'}`}
-                          style={{ width: `${Math.min(session.stats?.aiProbability || 0, 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-sm text-slate-400">{(session.stats?.aiProbability || 0).toFixed(0)}%</span>
-                    </div>
                   </td>
                   <td className="p-4 text-slate-400 capitalize">{session.language}</td>
                   <td className="p-4 text-right pr-6">
