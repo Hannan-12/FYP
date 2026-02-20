@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { doc, getDoc } from "firebase/firestore";
-import { ArrowLeft, ShieldCheck, ShieldAlert, Clock, Keyboard, Calendar, Code2 } from "lucide-react";
+import { ArrowLeft, ShieldCheck, ShieldAlert, Clock, Keyboard, Calendar, Code2, Brain, Lightbulb } from "lucide-react";
 import { motion } from "framer-motion";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -182,6 +182,59 @@ const UserSessionDetail = () => {
         )}
       </motion.div>
 
+      {/* Skill Analysis Card */}
+      {session.stats?.skillLevel && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="bg-slate-800 border border-slate-700 rounded-2xl p-6"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Brain className="text-indigo-400" size={22} />
+            <h2 className="text-lg font-bold text-white">Skill Analysis</h2>
+            {session.stats?.confidence > 0 && (
+              <span className="ml-auto text-xs text-slate-500">
+                Model confidence: {session.stats.confidence.toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-6">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Detected Skill Level</p>
+              <span className={`text-2xl font-extrabold ${
+                session.stats.skillLevel === "Advanced" ? "text-purple-400" :
+                session.stats.skillLevel === "Intermediate" ? "text-blue-400" : "text-green-400"
+              }`}>
+                {session.stats.skillLevel}
+              </span>
+            </div>
+            {session.stats?.confidence > 0 && (
+              <div className="flex-1">
+                <p className="text-xs text-slate-400 mb-1">Confidence</p>
+                <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${session.stats.confidence}%` }}
+                    transition={{ duration: 0.8, delay: 0.3 }}
+                    className={`h-full rounded-full ${
+                      session.stats.skillLevel === "Advanced" ? "bg-purple-500" :
+                      session.stats.skillLevel === "Intermediate" ? "bg-blue-500" : "bg-green-500"
+                    }`}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-1">{session.stats.confidence.toFixed(1)}% certainty</p>
+              </div>
+            )}
+            {!session.stats?.confidence && (
+              <p className="text-xs text-slate-500 italic">
+                Submit a code snapshot next session for higher accuracy analysis.
+              </p>
+            )}
+          </div>
+        </motion.div>
+      )}
+
       {/* Charts Section */}
       {signals && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -300,6 +353,31 @@ const UserSessionDetail = () => {
                   />
                 </div>
                 <p className="text-xs text-slate-400">{signal.description}</p>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Personalized Tips */}
+      {session.stats?.tips?.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="bg-slate-800 border border-indigo-500/30 rounded-2xl p-6"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Lightbulb className="text-yellow-400" size={22} />
+            <h2 className="text-lg font-bold text-white">Personalized Recommendations</h2>
+          </div>
+          <div className="space-y-3">
+            {session.stats.tips.map((tip, i) => (
+              <div key={i} className="flex items-start gap-3 bg-slate-900/50 rounded-xl p-4">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 text-xs font-bold flex items-center justify-center mt-0.5">
+                  {i + 1}
+                </span>
+                <p className="text-slate-300 text-sm leading-relaxed">{tip}</p>
               </div>
             ))}
           </div>
