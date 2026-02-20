@@ -12,6 +12,8 @@ import uuid
 import json
 import math
 import statistics
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 cred_path = "firebase_config/serviceAccountKey.json"
 
@@ -42,19 +44,78 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- AI Model Loading ---
+# --- AI Model Loading (CodeBERT) ---
+CODEBERT_LABEL2ID = {"Advanced": 0, "Beginner": 1, "Intermediate": 2}
+CODEBERT_ID2LABEL = {v: k for k, v in CODEBERT_LABEL2ID.items()}
+CODEBERT_MAX_LEN  = 256
+
+class CodeBERTClassifier:
+    """Thin wrapper around a fine-tuned CodeBERT model with sklearn-compatible API."""
+
+    def __init__(self, model_dir: str):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_dir).to(self.device)
+        self.model.eval()
+        print(f"CodeBERT model loaded from '{model_dir}' on {self.device}")
+
+    def _encode(self, code: str):
+        enc = self.tokenizer(
+            code,
+            max_length=CODEBERT_MAX_LEN,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt"
+        )
+        return enc["input_ids"].to(self.device), enc["attention_mask"].to(self.device)
+
+    def predict(self, codes: list) -> list:
+        results = []
+        with torch.no_grad():
+            for code in codes:
+                ids, mask = self._encode(code)
+                logits = self.model(input_ids=ids, attention_mask=mask).logits
+                label_id = int(torch.argmax(logits, dim=-1).item())
+                results.append(CODEBERT_ID2LABEL[label_id])
+        return results
+
+    def predict_proba(self, codes: list) -> list:
+        results = []
+        with torch.no_grad():
+            for code in codes:
+                ids, mask = self._encode(code)
+                logits = self.model(input_ids=ids, attention_mask=mask).logits
+                probs = torch.softmax(logits, dim=-1).squeeze(0).cpu().tolist()
+                results.append(probs)
+        return results
+
+
 ai_model = None
-try:
-    ai_model = joblib.load("ai_models/skill_classifier.pkl")
-    print("AI Model Loaded Successfully")
-except Exception as e:
-    try:
-        ai_model = joblib.load("skill_classifier.pkl")
-        print("AI Model Loaded Successfully (from root)")
-    except FileNotFoundError:
-        print(f"Warning: AI Model not found. ({e})")
-    except Exception as ex:
-        print(f"Warning: AI Model loading failed. ({ex})")
+_codebert_search_paths = [
+    "ai_models/best_codebert_large",
+    "best_codebert_large",
+]
+for _path in _codebert_search_paths:
+    if os.path.isdir(_path):
+        try:
+            ai_model = CodeBERTClassifier(_path)
+            break
+        except Exception as _ex:
+            print(f"Warning: CodeBERT load failed at '{_path}': {_ex}")
+
+if ai_model is None:
+    # Legacy sklearn fallback
+    for _pkl in ["ai_models/skill_classifier.pkl", "skill_classifier.pkl"]:
+        if os.path.exists(_pkl):
+            try:
+                ai_model = joblib.load(_pkl)
+                print(f"Sklearn model loaded from '{_pkl}' (CodeBERT not found)")
+                break
+            except Exception as _ex:
+                print(f"Warning: sklearn model load failed: {_ex}")
+
+if ai_model is None:
+    print("Warning: No AI model found — keyword fallback will be used.")
 
 # --- Gamified Quests Data with Test Cases (Python - original) ---
 CHALLENGES = {
