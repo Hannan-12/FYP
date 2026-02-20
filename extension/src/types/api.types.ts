@@ -152,6 +152,8 @@ export interface SessionEndRequest {
   filesEdited: string[];
   languagesUsed: string[];
   behavioralSignals?: BehavioralSignals;
+  snapshotCode?: string;      // Current file code at session end — used for CodeBERT skill analysis
+  snapshotLanguage?: string;  // Language of the snapshot file
 }
 
 /**

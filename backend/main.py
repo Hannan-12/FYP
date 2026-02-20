@@ -1733,6 +1733,8 @@ class SessionEndRequest(BaseModel):
     filesEdited: List[str] = []
     languagesUsed: List[str] = []
     behavioralSignals: Optional[BehavioralSignalsModel] = None
+    snapshotCode: Optional[str] = None      # Current file code at session end
+    snapshotLanguage: Optional[str] = None  # Language of the snapshot file
 
 class AIDetectRequest(BaseModel):
     sessionId: str
@@ -2081,6 +2083,52 @@ async def get_user_id(email: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error querying user: {str(e)}")
 
+def generate_tips(skill_level: str, ai_probability: float, signals: dict) -> list:
+    """Generate personalized, actionable recommendation tips based on skill level and AI signals."""
+    tips = []
+
+    # Skill-level tips
+    if skill_level == "Beginner":
+        tips.append("Practice writing small functions from scratch daily — even 15 minutes builds strong foundations.")
+        tips.append("Read code written by others and try to explain it line by line; this builds pattern recognition.")
+    elif skill_level == "Intermediate":
+        tips.append("Challenge yourself with problems that require data structures (trees, graphs) to deepen your understanding.")
+        tips.append("Review time and space complexity of your solutions — aim to optimize after you get them working.")
+    elif skill_level == "Advanced":
+        tips.append("Contribute to open-source projects; reviewing real codebases at scale accelerates mastery.")
+        tips.append("Mentor or explain concepts to others — teaching is one of the fastest ways to deepen expertise.")
+
+    # AI detection tips based on signals
+    if ai_probability > 70:
+        tips.append("High AI likelihood detected: try writing code without AI assistance for at least one session per day to build genuine problem-solving skills.")
+        tips.append("If you used AI to generate code, go back and manually rewrite it line by line to internalize the logic.")
+    elif ai_probability > 40:
+        tips.append("Some AI-assisted patterns detected: use AI as a reference, not a generator — write the solution yourself first, then compare.")
+
+    # Signal-specific tips
+    paste_signal = signals.get("paste_ratio", {})
+    if paste_signal.get("verdict") in ("suspicious", "ai_likely"):
+        tips.append("High paste ratio: type code manually instead of copying — muscle memory accelerates learning.")
+
+    rhythm_signal = signals.get("typing_rhythm", {})
+    if rhythm_signal.get("verdict") in ("suspicious", "ai_likely"):
+        tips.append("Irregular typing rhythm detected: slow down and think through each line before typing it.")
+
+    deletion_signal = signals.get("deletion_ratio", {})
+    if deletion_signal.get("verdict") in ("suspicious", "ai_likely"):
+        tips.append("Very few deletions observed: real coding involves constant correction — don't be afraid to edit and refine.")
+
+    idle_signal = signals.get("idle_ratio", {})
+    if idle_signal.get("verdict") in ("suspicious", "ai_likely"):
+        tips.append("Little thinking/pause time: take moments to plan your approach before writing code — design beats speed.")
+
+    # Positive reinforcement if all human
+    ai_likely_count = sum(1 for s in signals.values() if s.get("verdict") == "ai_likely")
+    if ai_likely_count == 0 and ai_probability < 30:
+        tips.append("Excellent authentic coding behavior! Keep up the consistent practice.")
+
+    return tips[:5]  # Return at most 5 tips to keep it focused
+
 # --- Persistent Session Endpoints ---
 
 @app.post("/session/start")
@@ -2151,18 +2199,35 @@ async def session_end(session_id: str, req: SessionEndRequest):
         if not doc.exists:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Estimate skill level from session metrics
-        skill_level = "Beginner"
         num_languages = len(req.languagesUsed) if req.languagesUsed else 0
         num_files = len(req.filesEdited) if req.filesEdited else 0
-        advanced_langs = {"typescript", "rust", "go", "kotlin", "scala", "swift"}
-        intermediate_langs = {"javascript", "java", "csharp", "c#", "python", "ruby", "php"}
 
-        used_lower = [l.lower() for l in (req.languagesUsed or [])]
-        if any(l in advanced_langs for l in used_lower) or (num_languages >= 3 and num_files >= 5):
-            skill_level = "Advanced"
-        elif any(l in intermediate_langs for l in used_lower) or num_files >= 3 or req.totalKeystrokes > 500:
-            skill_level = "Intermediate"
+        # Use CodeBERT model on snapshot code if provided, else fall back to heuristic
+        skill_level = "Beginner"
+        confidence = 0.0
+        if req.snapshotCode and ai_model:
+            try:
+                skill_level = ai_model.predict([req.snapshotCode])[0]
+                probs = ai_model.predict_proba([req.snapshotCode])[0]
+                confidence = float(max(probs) * 100)
+            except Exception as model_err:
+                print(f"CodeBERT error on snapshot: {model_err}")
+                # Fall back to heuristic
+                advanced_langs = {"typescript", "rust", "go", "kotlin", "scala", "swift"}
+                intermediate_langs = {"javascript", "java", "csharp", "c#", "python", "ruby", "php"}
+                used_lower = [l.lower() for l in (req.languagesUsed or [])]
+                if any(l in advanced_langs for l in used_lower) or (num_languages >= 3 and num_files >= 5):
+                    skill_level = "Advanced"
+                elif any(l in intermediate_langs for l in used_lower) or num_files >= 3 or req.totalKeystrokes > 500:
+                    skill_level = "Intermediate"
+        else:
+            advanced_langs = {"typescript", "rust", "go", "kotlin", "scala", "swift"}
+            intermediate_langs = {"javascript", "java", "csharp", "c#", "python", "ruby", "php"}
+            used_lower = [l.lower() for l in (req.languagesUsed or [])]
+            if any(l in advanced_langs for l in used_lower) or (num_languages >= 3 and num_files >= 5):
+                skill_level = "Advanced"
+            elif any(l in intermediate_langs for l in used_lower) or num_files >= 3 or req.totalKeystrokes > 500:
+                skill_level = "Intermediate"
 
         # Run AI Detection Engine with behavioral signals
         detection_input = {
@@ -2177,6 +2242,9 @@ async def session_end(session_id: str, req: SessionEndRequest):
         detection_result = AIDetectionEngine.analyze(detection_input)
         ai_probability = detection_result["aiLikelihoodScore"]
 
+        # Generate personalized tips
+        tips = generate_tips(skill_level, ai_probability, detection_result["signals"])
+
         update_data = {
             "status": "completed",
             "endTime": firestore.SERVER_TIMESTAMP,
@@ -2190,11 +2258,13 @@ async def session_end(session_id: str, req: SessionEndRequest):
             "languagesUsed": req.languagesUsed,
             "stats": {
                 "skillLevel": skill_level,
+                "confidence": confidence,
                 "duration": req.totalDuration,
                 "keystrokes": req.totalKeystrokes,
                 "aiProbability": ai_probability,
                 "filesCount": num_files,
                 "languageCount": num_languages,
+                "tips": tips,
             },
             "aiDetection": {
                 "aiLikelihoodScore": detection_result["aiLikelihoodScore"],

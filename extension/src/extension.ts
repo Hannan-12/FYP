@@ -204,6 +204,13 @@ async function endBackendSession(): Promise<void> {
     idleDuration += fm.idleTimeMs || 0;
   }
 
+  // Capture current file code for CodeBERT skill analysis
+  const activeEditor = vscode.window.activeTextEditor;
+  const snapshotCode = activeEditor?.document?.getText();
+  const snapshotLanguage = activeEditor
+    ? LanguageDetector.detectLanguage(activeEditor.document.fileName)
+    : undefined;
+
   const endData: SessionEndRequest = {
     totalKeystrokes: trackingService.getKeystrokeCount(),
     totalPastes: session?.totalPastes || 0,
@@ -213,7 +220,9 @@ async function endBackendSession(): Promise<void> {
     idleDuration: idleDuration / 1000,
     filesEdited: session?.filesEdited || [],
     languagesUsed: session?.languagesUsed || [],
-    behavioralSignals: trackingService.getBehavioralSignals()
+    behavioralSignals: trackingService.getBehavioralSignals(),
+    snapshotCode: snapshotCode || undefined,
+    snapshotLanguage: snapshotLanguage || undefined
   };
 
   const success = await apiService.endSession(backendSessionId, endData);
