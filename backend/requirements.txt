@@ -1,4 +1,6 @@
 annotated-doc==0.0.4
+torch>=2.0.0
+transformers>=4.40.0
 annotated-types==0.7.0
 anthropic
 anyio==4.11.0
