@@ -331,7 +331,7 @@ const UserSessionDetail = () => {
                 />
                 <Tooltip
                   contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569", borderRadius: "12px", color: "#e2e8f0" }}
-                  formatter={(value, , props) => [
+                  formatter={(value, _name, props) => [
                     `${value}/100 — ${VERDICT_LABELS[props.payload.verdict] || "N/A"}`,
                     "Score"
                   ]}
