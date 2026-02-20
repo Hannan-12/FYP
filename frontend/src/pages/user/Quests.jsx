@@ -391,12 +391,13 @@ const Quests = () => {
                     </div>
                   )}
 
-                  {result.success && (
-                    <>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                  {/* Model Analysis — always shown */}
+                  {(result.skillLevel || result.aiDetection) && (
+                    <div className="mt-4 space-y-4">
+                      <div className={`grid gap-4 mt-2 ${result.success ? "grid-cols-2 md:grid-cols-4" : "grid-cols-2 md:grid-cols-3"}`}>
                         <div className="bg-slate-800/50 p-3 rounded-lg">
                           <p className="text-xs text-slate-400">Detected Skill</p>
-                          <p className="text-lg font-bold text-indigo-400">{result.skillLevel}</p>
+                          <p className="text-lg font-bold text-indigo-400">{result.skillLevel || "—"}</p>
                         </div>
                         <div className="bg-slate-800/50 p-3 rounded-lg">
                           <p className="text-xs text-slate-400">Confidence</p>
@@ -408,15 +409,17 @@ const Quests = () => {
                             {(result.aiProbability || 0).toFixed(1)}%
                           </p>
                         </div>
-                        <div className="bg-slate-800/50 p-3 rounded-lg">
-                          <p className="text-xs text-slate-400">XP Earned</p>
-                          <p className="text-lg font-bold text-yellow-400">+{result.xpEarned}</p>
-                        </div>
+                        {result.success && (
+                          <div className="bg-slate-800/50 p-3 rounded-lg">
+                            <p className="text-xs text-slate-400">XP Earned</p>
+                            <p className="text-lg font-bold text-yellow-400">+{result.xpEarned}</p>
+                          </div>
+                        )}
                       </div>
 
                       {/* AI Detection Signal Breakdown */}
                       {result.aiDetection?.signals && (
-                        <div className="mt-6 bg-slate-900/60 border border-slate-700/50 rounded-xl p-5">
+                        <div className="bg-slate-900/60 border border-slate-700/50 rounded-xl p-5">
                           <div className="flex items-center gap-2 mb-4">
                             {(result.aiProbability || 0) > 50 ? (
                               <ShieldAlert className="text-red-400" size={20} />
@@ -467,7 +470,7 @@ const Quests = () => {
                           )}
                         </div>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
