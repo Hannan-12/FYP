@@ -13,7 +13,6 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import StudentList from "./pages/admin/StudentList";
 import SessionDetail from "./pages/admin/SessionDetail";
 import Analytics from "./pages/admin/Analytics";
-import QuestManager from "./pages/admin/QuestManager";
 
 // User Components
 import UserLayout from "./layouts/UserLayout";
@@ -38,7 +37,6 @@ function App() {
             <Route path="students" element={<StudentList />} />
             <Route path="session/:id" element={<SessionDetail />} />
             <Route path="analytics" element={<Analytics />} />
-            <Route path="quests" element={<QuestManager />} />
           </Route>
 
           <Route path="/user" element={<ProtectedRoute requiredRole="student"><UserLayout /></ProtectedRoute>}>

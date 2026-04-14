@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { doc, getDoc } from "firebase/firestore";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 import {
   ArrowLeft, ShieldCheck, ShieldAlert, Clock, Keyboard, Calendar,
   Code2, Brain, Lightbulb, TrendingUp, Activity, Target, Star
@@ -37,6 +39,7 @@ const UserSessionDetail = () => {
   const navigate = useNavigate();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -44,7 +47,24 @@ const UserSessionDetail = () => {
         const docSnap = await getDoc(doc(db, "sessions", id));
         if (docSnap.exists()) {
           const data = { id: docSnap.id, ...docSnap.data() };
-          if (data.userId === user?.uid) setSession(data);
+          if (data.userId === user?.uid) {
+            setSession(data);
+            // Auto-trigger analysis if session has no aiDetection or stats
+            if (!data.aiDetection && !data.stats) {
+              setAnalyzing(true);
+              try {
+                const res = await fetch(`${API_BASE_URL}/detect-ai/${id}`);
+                if (res.ok) {
+                  const result = await res.json();
+                  setSession(prev => ({ ...prev, aiDetection: result }));
+                }
+              } catch (e) {
+                console.error("Auto-analysis failed:", e);
+              } finally {
+                setAnalyzing(false);
+              }
+            }
+          }
         }
       } catch (error) {
         console.error("Failed to fetch session:", error);
@@ -117,6 +137,14 @@ const UserSessionDetail = () => {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-10">
+
+      {/* Auto-analysis banner */}
+      {analyzing && (
+        <div className="flex items-center gap-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3 text-indigo-300 text-sm">
+          <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-indigo-400 shrink-0" />
+          Running behavioral analysis on this session…
+        </div>
+      )}
 
       {/* Back Button */}
       <button

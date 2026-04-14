@@ -6,6 +6,13 @@ import { motion } from "framer-motion";
 import { ChevronLeft, Clock, Code2, Calendar, TrendingUp, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+const LANG_LABELS = {
+  python: "Python", javascript: "JavaScript", typescript: "TypeScript",
+  java: "Java", cpp: "C++", c: "C", csharp: "C#", go: "Go",
+  rust: "Rust", html: "HTML", css: "CSS", ruby: "Ruby", php: "PHP",
+};
+const formatLang = (l) => LANG_LABELS[l?.toLowerCase()] || (l ? l.charAt(0).toUpperCase() + l.slice(1) : "Unknown");
+
 const MySessions = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -143,7 +150,9 @@ const MySessions = () => {
                     </div>
                     <div>
                       <h3 className="text-lg font-semibold text-white">
-                        {session.fileName?.replace(/\.\w+$/, '') || session.language || "Unknown"}
+                        {isExtension
+                          ? formatLang(session.languagesUsed?.[0] || session.language)
+                          : (session.fileName?.replace(/\.\w+$/, '') || formatLang(session.language))}
                         {isExtension ? " (VS Code)" : " Quest"}
                       </h3>
                       <div className="flex items-center gap-4 mt-1 text-sm text-slate-400">

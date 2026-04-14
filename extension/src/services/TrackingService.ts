@@ -247,7 +247,36 @@ export class TrackingService {
       await vscode.commands.executeCommand('editor.action.formatDocument');
     });
 
-    this.disposables.push(textChange, editorChange, openDoc, closeDoc, windowState, pasteCmd, undoCmd, redoCmd, formatCmd);
+    // Intercept inline suggestion accept (Tab) — catches Copilot, Claude Code, any AI inline completion
+    const inlineSuggestCmd = vscode.commands.registerTextEditorCommand(
+      'devskill-tracker.interceptInlineSuggest',
+      async (editor) => {
+        const beforeLen = editor.document.getText().length;
+        await vscode.commands.executeCommand('editor.action.inlineSuggest.commit');
+        // Wait one micro-task for VS Code to apply the text change
+        await new Promise<void>(r => setTimeout(r, 15));
+        const charsInserted = Math.max(0, editor.document.getText().length - beforeLen);
+        if (this.running && charsInserted > 0) {
+          this.trackCompletionAccept('copilot', charsInserted);
+        }
+      }
+    );
+
+    // Intercept Ctrl/Cmd+Right to accept next word/line of inline suggestion
+    const inlineSuggestNextLineCmd = vscode.commands.registerTextEditorCommand(
+      'devskill-tracker.interceptInlineSuggestNextLine',
+      async (editor) => {
+        const beforeLen = editor.document.getText().length;
+        await vscode.commands.executeCommand('editor.action.inlineSuggest.acceptNextLine');
+        await new Promise<void>(r => setTimeout(r, 15));
+        const charsInserted = Math.max(0, editor.document.getText().length - beforeLen);
+        if (this.running && charsInserted > 0) {
+          this.trackCompletionAccept('copilot', charsInserted);
+        }
+      }
+    );
+
+    this.disposables.push(textChange, editorChange, openDoc, closeDoc, windowState, pasteCmd, undoCmd, redoCmd, formatCmd, inlineSuggestCmd, inlineSuggestNextLineCmd);
   }
 
   /**
@@ -318,6 +347,7 @@ export class TrackingService {
     }
 
     // Check if this text change was triggered by a clipboard paste command
+    const wasClipboardPaste = this.pendingPasteFromClipboard;
     if (this.pendingPasteFromClipboard) {
       this.pendingPasteFromClipboard = false;
       // Already tracked in interceptPaste, skip normal paste detection
@@ -344,6 +374,14 @@ export class TrackingService {
       this.fileMetrics[file].pasteCount++;
       if (this.session) {
         this.session.totalPastes++;
+      }
+
+      // Track large insertions in behavioral signals.
+      // Skip clipboard pastes here — they are already counted in interceptPaste.
+      // This captures AI tool edits (e.g., Claude Code, Copilot Chat applying code).
+      if (!wasClipboardPaste) {
+        this.behavioralSignals.totalClipboardPastes++;
+        this.behavioralSignals.totalPasteCharacters += totalAdded;
       }
 
       // Record paste event

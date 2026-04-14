@@ -29,6 +29,7 @@ wheels/
 # AI Models
 *.pkl
 ai_models/*.pkl
+ai_models/best_codebert_large/
 
 # Environment variables
 .env

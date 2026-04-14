@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { Brain, Trophy, Zap, ChevronLeft, Code2, Sparkles, Play, CheckCircle, XCircle, AlertTriangle, RefreshCw, Globe, ArrowLeft, Star, ShieldCheck, ShieldAlert, Eye } from "lucide-react";
+import { Brain, Trophy, Zap, ChevronLeft, Code2, Sparkles, Play, CheckCircle, XCircle, AlertTriangle, Globe, ArrowLeft, Star, ShieldCheck, ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Editor from "@monaco-editor/react";
@@ -57,11 +57,22 @@ const Quests = () => {
   const [userSkillLevel, setUserSkillLevel] = useState("Beginner");
   const [detectedLanguage, setDetectedLanguage] = useState(null);
   const [selectedLanguage, setSelectedLanguage] = useState("python");
-  const [allLangCounts, setAllLangCounts] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [keystrokes, setKeystrokes] = useState(0);
+  const [hintsUsed, setHintsUsed] = useState(0);
+  const [dailyMeta, setDailyMeta] = useState(null); // { date, cached, skillLevel, language }
   const startTimeRef = useRef(Date.now());
+  const lastKeyTimeRef = useRef(null);
+  // Behavioral signal trackers for AI detection
+  const bsRef = useRef({
+    totalClipboardPastes: 0,
+    totalPasteCharacters: 0,
+    totalDeletions: 0,
+    deletionCharacters: 0,
+    burstCount: 0,
+    typingIntervals: [],
+  });
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -76,7 +87,6 @@ const Quests = () => {
           if (data.language) {
             setDetectedLanguage(data.language);
             setSelectedLanguage(data.language);
-            setAllLangCounts(data.all || {});
           }
         }
       } catch (err) {
@@ -128,48 +138,88 @@ const Quests = () => {
     fetchUserSkillLevel();
   }, [user]);
 
-  // --- Fetch multiple quests when language or skill level changes ---
+  // --- Fetch personalized daily quests for the user ---
   useEffect(() => {
-    const fetchQuests = async () => {
+    const fetchDailyQuests = async () => {
+      if (!user?.uid) return;
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/get-quests/${userSkillLevel}?language=${selectedLanguage}&count=8`
-        );
+        const response = await fetch(`${API_BASE_URL}/quests/daily/${user.uid}`);
         if (!response.ok) throw new Error(`Server error: ${response.status}`);
         const data = await response.json();
         setQuests(data.quests || []);
+        setDailyMeta({ date: data.date, cached: data.cached, skillLevel: data.skillLevel, language: data.language });
+        if (data.language) {
+          setDetectedLanguage(data.language);
+          setSelectedLanguage(data.language);
+        }
+        if (data.skillLevel) setUserSkillLevel(data.skillLevel);
       } catch (err) {
-        console.error("Failed to fetch quests:", err);
-        setError("Unable to connect to the backend. Make sure the server is running.");
+        console.error("Failed to fetch daily quests:", err);
+        setError("Unable to load your daily quests. Make sure the backend is running.");
         setQuests([]);
       } finally {
         setLoading(false);
       }
     };
 
-    if (userSkillLevel && selectedLanguage) {
-      fetchQuests();
-    }
-  }, [userSkillLevel, selectedLanguage]);
+    if (user?.uid) fetchDailyQuests();
+  }, [user?.uid]);
 
-  // Build language tabs dynamically from what the user has been coding in
-  const languageTabs = Object.entries(allLangCounts)
-    .sort((a, b) => b[1] - a[1]) // sort by session count descending
-    .map(([id, count]) => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1), count }));
+// --- Monaco mount: attach behavioral signal trackers ---
+  const handleEditorMount = (editor) => {
+    editor.onDidChangeModelContent((event) => {
+      const now = Date.now();
+      event.changes.forEach((change) => {
+        const added = change.text.length;
+        const removed = change.rangeLength;
 
-  // If selected language isn't in the tabs yet, add it
-  if (selectedLanguage && !languageTabs.find(l => l.id === selectedLanguage)) {
-    languageTabs.unshift({ id: selectedLanguage, name: selectedLanguage.charAt(0).toUpperCase() + selectedLanguage.slice(1), count: 0 });
-  }
+        // Paste: large block or multiline text added at once
+        if (added > 20 || (added > 1 && change.text.includes("\n"))) {
+          bsRef.current.totalClipboardPastes += 1;
+          bsRef.current.totalPasteCharacters += added;
+          bsRef.current.burstCount += 1;
+        }
+
+        // Deletion
+        if (removed > 0 && added === 0) {
+          bsRef.current.totalDeletions += 1;
+          bsRef.current.deletionCharacters += removed;
+        }
+
+        // Single-char keystroke → track rhythm
+        if (added === 1 && !change.text.includes("\n")) {
+          if (lastKeyTimeRef.current !== null) {
+            const interval = now - lastKeyTimeRef.current;
+            if (interval < 2000) {
+              bsRef.current.typingIntervals.push(interval);
+              if (bsRef.current.typingIntervals.length > 200)
+                bsRef.current.typingIntervals.shift();
+            }
+          }
+          lastKeyTimeRef.current = now;
+        }
+      });
+    });
+  };
 
   // --- Pick a quest to solve ---
   const selectQuest = (quest) => {
     setActiveQuest(quest);
-    setCode(getCodeTemplate(selectedLanguage, quest.title, quest.task));
+    setCode(getCodeTemplate(quest.language || selectedLanguage, quest.title, quest.task));
     startTimeRef.current = Date.now();
+    lastKeyTimeRef.current = null;
+    bsRef.current = {
+      totalClipboardPastes: 0,
+      totalPasteCharacters: 0,
+      totalDeletions: 0,
+      deletionCharacters: 0,
+      burstCount: 0,
+      typingIntervals: [],
+    };
     setKeystrokes(0);
+    setHintsUsed(0);
     setResult(null);
   };
 
@@ -206,7 +256,8 @@ const Quests = () => {
           fileName: `${activeQuest.title}.${getFileExtension(selectedLanguage)}`,
           duration: duration,
           keystrokes: keystrokes,
-          questId: activeQuest.id
+          questId: activeQuest.id,
+          behavioralSignals: { ...bsRef.current },
         })
       });
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
@@ -280,6 +331,28 @@ const Quests = () => {
       message,
       aiDetection: analysis.stats?.aiDetection || null
     });
+
+    // Report completion for difficulty scaling
+    if (solutionPassed && activeQuest.id && user?.uid) {
+      try {
+        await fetch(`${API_BASE_URL}/quests/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.uid,
+            questId: activeQuest.id,
+            completionTimeMs: Math.round(duration * 1000),
+            estimatedTimeMs: 600000,
+            hintsUsed,
+            passed: true,
+            questType: activeQuest.questType || "reinforcement",
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to report quest completion:", err);
+      }
+    }
+
     setSubmitting(false);
   };
 
@@ -347,6 +420,7 @@ const Quests = () => {
             theme="vs-dark"
             value={code}
             onChange={handleEditorChange}
+            onMount={handleEditorMount}
             options={{
               minimap: { enabled: false },
               fontSize: 14,
@@ -525,47 +599,26 @@ const Quests = () => {
 
       <div className="text-center">
         <h1 className="text-4xl font-extrabold text-white flex items-center justify-center gap-3">
-          <Brain className="text-indigo-400" size={40} /> Quest Playground
+          <Brain className="text-indigo-400" size={40} /> Daily Quests
         </h1>
         <p className="text-slate-400 mt-2">
-          {detectedLanguage ? (
-            <>We detected you've been coding in <span className="text-indigo-400 font-semibold capitalize">{detectedLanguage}</span>. Here are your quests.</>
+          {dailyMeta ? (
+            <>
+              Personalized for your <span className="text-indigo-400 font-semibold">{dailyMeta.skillLevel}</span> level in{" "}
+              <span className="text-indigo-400 font-semibold capitalize">{dailyMeta.language}</span>.
+              {dailyMeta.cached && <span className="ml-2 text-xs text-slate-500">(today&apos;s quests)</span>}
+            </>
           ) : (
-            <>Pick a language and start solving quests to level up.</>
+            <>Your personalized coding challenges for today.</>
           )}
         </p>
       </div>
 
-      {/* Language Tabs - built dynamically from user's coding sessions */}
-      {languageTabs.length > 0 && (
-        <div className="flex items-center justify-center gap-3 flex-wrap">
-          <Globe className="text-slate-400" size={18} />
-          <div className="flex gap-2 flex-wrap justify-center">
-            {languageTabs.map((lang) => {
-              const isDetected = lang.id === detectedLanguage;
-              const isSelected = lang.id === selectedLanguage;
-              return (
-                <button
-                  key={lang.id}
-                  onClick={() => setSelectedLanguage(lang.id)}
-                  disabled={loading}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 relative ${
-                    isSelected
-                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
-                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700"
-                  } disabled:opacity-50`}
-                >
-                  {lang.name}
-                  {isDetected && !isSelected && (
-                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-green-500/20 text-green-400 rounded-full border border-green-500/30">detected</span>
-                  )}
-                  {lang.count > 0 && (
-                    <span className="text-[10px] text-slate-500">{lang.count} sessions</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+      {/* Language indicator */}
+      {detectedLanguage && (
+        <div className="flex items-center justify-center gap-2">
+          <Globe className="text-slate-500" size={16} />
+          <span className="text-slate-500 text-sm capitalize">{detectedLanguage}</span>
         </div>
       )}
 
@@ -595,27 +648,14 @@ const Quests = () => {
         <>
           <div className="flex items-center justify-between">
             <p className="text-slate-500 text-sm">
-              Showing {quests.length} {langName} quest{quests.length !== 1 ? "s" : ""} for {userSkillLevel} level
+              {quests.length} personalized quest{quests.length !== 1 ? "s" : ""} for today
             </p>
-            <button
-              onClick={() => {
-                setLoading(true);
-                fetch(`${API_BASE_URL}/get-quests/${userSkillLevel}?language=${selectedLanguage}&count=8`)
-                  .then(r => r.json())
-                  .then(data => setQuests(data.quests || []))
-                  .catch(() => {})
-                  .finally(() => setLoading(false));
-              }}
-              className="text-slate-400 hover:text-white flex items-center gap-1 text-sm transition"
-            >
-              <RefreshCw size={14} /> Shuffle
-            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {quests.map((quest, index) => (
               <motion.div
-                key={quest.id || index}
+                key={`${quest.id || "quest"}_${index}`}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
@@ -627,7 +667,18 @@ const Quests = () => {
                     <div className="p-2 bg-indigo-500/20 rounded-lg">
                       <Code2 className="text-indigo-400" size={20} />
                     </div>
-                    <h3 className="text-lg font-bold text-white group-hover:text-indigo-300 transition">{quest.title}</h3>
+                    <div>
+                      <h3 className="text-lg font-bold text-white group-hover:text-indigo-300 transition">{quest.title}</h3>
+                      {quest.questType && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                          quest.questType === "stretch" ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" :
+                          quest.questType === "weak_area" ? "bg-red-500/20 text-red-400 border border-red-500/30" :
+                          "bg-green-500/20 text-green-400 border border-green-500/30"
+                        }`}>
+                          {quest.questType === "stretch" ? "Stretch" : quest.questType === "weak_area" ? "Weak Area" : "Reinforce"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 text-yellow-400 bg-yellow-400/10 px-3 py-1 rounded-full text-sm font-bold">
                     <Star size={14} fill="currentColor" />
@@ -638,10 +689,10 @@ const Quests = () => {
                 <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-700/50">
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <span>{langName}</span>
-                    {quest.testCases && (
+                    {(quest.testCasesCount ?? quest.testCases?.length ?? 0) > 0 && (
                       <>
                         <span className="text-slate-700">|</span>
-                        <span>{quest.testCases.length} test{quest.testCases.length !== 1 ? "s" : ""}</span>
+                        <span>{quest.testCasesCount ?? quest.testCases?.length} test{(quest.testCasesCount ?? quest.testCases?.length) !== 1 ? "s" : ""}</span>
                       </>
                     )}
                   </div>
