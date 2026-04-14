@@ -62,6 +62,14 @@
       {
         "command": "devskill-tracker.interceptFormat",
         "title": "DevSkill: Format Document (intercepted)"
+      },
+      {
+        "command": "devskill-tracker.interceptInlineSuggest",
+        "title": "DevSkill: Accept Inline Suggestion (intercepted)"
+      },
+      {
+        "command": "devskill-tracker.interceptInlineSuggestNextLine",
+        "title": "DevSkill: Accept Inline Suggestion Next Line (intercepted)"
       }
     ],
     "keybindings": [
@@ -88,6 +96,17 @@
         "key": "shift+alt+f",
         "mac": "shift+alt+f",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "devskill-tracker.interceptInlineSuggest",
+        "key": "tab",
+        "when": "inlineSuggestionVisible && !editorTabMovesFocus"
+      },
+      {
+        "command": "devskill-tracker.interceptInlineSuggestNextLine",
+        "key": "ctrl+right",
+        "mac": "cmd+right",
+        "when": "inlineSuggestionVisible"
       }
     ],
     "configuration": {

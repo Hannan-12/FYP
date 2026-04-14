@@ -15,30 +15,39 @@ import statistics
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
-cred_path = "firebase_config/serviceAccountKey.json"
-
-if not os.path.exists(cred_path):
-    print(f"Error: Cannot find {cred_path}")
-else:
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(cred_path)
+if not firebase_admin._apps:
+    cred_json_env = os.getenv("FIREBASE_CREDENTIALS_JSON")
+    if cred_json_env:
+        cred = credentials.Certificate(json.loads(cred_json_env))
         firebase_admin.initialize_app(cred)
-    print("Firebase Admin Connected")
+        print("Firebase Admin Connected (env)")
+    else:
+        cred_path = os.getenv("FIREBASE_CREDS_PATH", "firebase_config/serviceAccountKey.json")
+        if os.path.exists(cred_path):
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
+            print(f"Firebase Admin Connected (file: {cred_path})")
+        else:
+            raise RuntimeError(
+                f"Firebase credentials not found. Set FIREBASE_CREDENTIALS_JSON env var "
+                f"or place serviceAccountKey.json at {cred_path}"
+            )
 
 db = firestore.client()
 app = FastAPI(title="DevSkill Tracker API", version="1.0.0")
 
 # Enable CORS for frontend and extension
+_extra_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+_default_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",      # React dev server
-        "http://localhost:5173",      # Vite dev server
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-        "vscode-webview://*",         # VS Code extension webview
-        "*"                           # Allow all origins for extension
-    ],
+    allow_origins=_default_origins + _extra_origins,
+    allow_origin_regex=r"vscode-webview://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -91,17 +100,18 @@ class CodeBERTClassifier:
 
 
 ai_model = None
-_codebert_search_paths = [
+_codebert_sources = [
+    os.getenv("CODEBERT_MODEL_ID", "Hannan-12/devskill-codebert"),
     "ai_models/best_codebert_large",
     "best_codebert_large",
 ]
-for _path in _codebert_search_paths:
-    if os.path.isdir(_path):
-        try:
-            ai_model = CodeBERTClassifier(_path)
+for _src in _codebert_sources:
+    try:
+        if os.path.isdir(_src) or "/" in _src:
+            ai_model = CodeBERTClassifier(_src)
             break
-        except Exception as _ex:
-            print(f"Warning: CodeBERT load failed at '{_path}': {_ex}")
+    except Exception as _ex:
+        print(f"Warning: CodeBERT load failed at '{_src}': {_ex}")
 
 if ai_model is None:
     # Legacy sklearn fallback
@@ -1677,6 +1687,7 @@ class CodeSession(BaseModel):
     duration: float
     keystrokes: int
     questId: Union[int, str, None] = None  # Quest ID (int for hardcoded, str for Firestore)
+    behavioralSignals: Optional[dict] = None
 
 class QuestCreateRequest(BaseModel):
     title: str
@@ -1693,6 +1704,15 @@ class QuestUpdateRequest(BaseModel):
     language: Optional[str] = None
     level: Optional[str] = None
     testCases: Optional[List[dict]] = None
+
+class QuestCompleteRequest(BaseModel):
+    userId: str
+    questId: str
+    completionTimeMs: int
+    estimatedTimeMs: int = 600000  # default 10 min
+    hintsUsed: int = 0
+    passed: bool
+    questType: str = "reinforcement"  # reinforcement | stretch | weak_area
 
 class SessionStartRequest(BaseModel):
     userId: str
@@ -1751,16 +1771,16 @@ class AIDetectionEngine:
     Signals are weighted and combined for a final AI likelihood score.
     """
 
-    # Signal weights (must sum to ~1.0)
+    # Signal weights (must sum to 1.0)
     WEIGHTS = {
-        "typing_speed": 0.15,
-        "paste_ratio": 0.20,
-        "typing_rhythm": 0.15,
+        "typing_speed":   0.15,
+        "paste_ratio":    0.25,   # Increased — primary signal for vibe coding
+        "typing_rhythm":  0.15,
         "deletion_ratio": 0.10,
-        "burst_pattern": 0.10,
-        "copilot_usage": 0.15,
+        "burst_pattern":  0.10,
+        "copilot_usage":  0.15,
         "undo_redo_ratio": 0.05,
-        "idle_ratio": 0.10,
+        "idle_ratio":     0.05,
     }
 
     @staticmethod
@@ -1789,24 +1809,38 @@ class AIDetectionEngine:
 
         # --- Signal 1: Typing Speed (characters per second) ---
         cps = total_keystrokes / (active_duration + 0.1) if active_duration > 0 else 0
+
+        # Pre-compute paste metrics here for use in multiple signals
+        paste_chars_early = bs.get("totalPasteCharacters", 0)
+        total_input_early = total_keystrokes + paste_chars_early + 0.1
+        paste_ratio_early = paste_chars_early / total_input_early if total_input_early > 0 else 0
+
         if cps > 8.0:
             ts_score, ts_verdict = 95, "ai_likely"
+            ts_desc = f"{cps:.1f} chars/sec — superhuman typing speed"
         elif cps > 5.0:
             ts_score, ts_verdict = 75, "ai_likely"
+            ts_desc = f"{cps:.1f} chars/sec — very fast, likely AI-assisted"
         elif cps > 3.5:
             ts_score, ts_verdict = 40, "suspicious"
+            ts_desc = f"{cps:.1f} chars/sec — above average"
         elif cps > 1.5:
             ts_score, ts_verdict = 10, "human"
+            ts_desc = f"{cps:.1f} chars/sec — normal human typing"
+        elif paste_ratio_early > 0.5:
+            # Low keystrokes but lots of paste — user typed prompts, AI wrote the code
+            ts_score, ts_verdict = 75, "ai_likely"
+            ts_desc = f"{cps:.1f} chars/sec — few keystrokes typed but {paste_ratio_early*100:.0f}% of code was pasted (vibe coding pattern)"
         else:
-            # Very slow — either beginner or idle time not properly tracked
             ts_score, ts_verdict = 15, "human"
+            ts_desc = f"{cps:.1f} chars/sec — slow session"
 
         signals["typing_speed"] = {
             "name": "Typing Speed",
             "value": round(cps, 2),
             "score": ts_score,
             "weight": AIDetectionEngine.WEIGHTS["typing_speed"],
-            "description": f"{cps:.1f} chars/sec — avg human is 2-4 cps",
+            "description": ts_desc,
             "verdict": ts_verdict
         }
 
@@ -1858,8 +1892,11 @@ class AIDetectionEngine:
 
             tr_desc = f"Rhythm variability: {cv:.2f} (CV) — humans typically >0.6"
         else:
-            # Too few intervals — suspicious if session produced lots of code
-            if total_keystrokes > 200:
+            # Too few typing intervals — check paste context
+            if paste_chars_early > 200:
+                tr_score, tr_verdict = 85, "ai_likely"
+                tr_desc = f"Only {len(typing_intervals)} typed intervals but {paste_chars_early} chars pasted — code was generated, not typed"
+            elif total_keystrokes > 200:
                 tr_score, tr_verdict = 60, "suspicious"
                 tr_desc = f"Only {len(typing_intervals)} typing intervals for {total_keystrokes} keystrokes — most code may have been pasted"
             else:
@@ -1907,17 +1944,20 @@ class AIDetectionEngine:
         }
 
         # --- Signal 5: Burst Pattern ---
-        # Rapid typing bursts followed by long pauses suggest copy-paste-modify pattern
+        # Rapid typing bursts OR large paste insertions = AI-assisted pattern
         burst_count = bs.get("burstCount", 0)
-        if burst_count >= 5:
-            bp_score, bp_verdict = 80, "ai_likely"
-            bp_desc = f"{burst_count} burst patterns — rapid typing then long pauses (copy-paste-modify)"
-        elif burst_count >= 2:
-            bp_score, bp_verdict = 45, "suspicious"
-            bp_desc = f"{burst_count} burst patterns detected"
+        clipboard_pastes_for_burst = bs.get("totalClipboardPastes", 0)
+        # Each large paste event is effectively an AI "burst" of inserted code
+        effective_bursts = burst_count + clipboard_pastes_for_burst
+        if effective_bursts >= 5:
+            bp_score, bp_verdict = 85, "ai_likely"
+            bp_desc = f"{clipboard_pastes_for_burst} large paste insertions + {burst_count} typing bursts — AI-generated code pattern"
+        elif effective_bursts >= 2:
+            bp_score, bp_verdict = 55, "suspicious"
+            bp_desc = f"{effective_bursts} large insertion events detected"
         else:
             bp_score, bp_verdict = 10, "human"
-            bp_desc = f"No significant burst patterns — steady coding rhythm"
+            bp_desc = f"No significant paste bursts — steady coding rhythm"
 
         signals["burst_pattern"] = {
             "name": "Burst Pattern",
@@ -2020,6 +2060,17 @@ class AIDetectionEngine:
             total_weight += w
 
         ai_likelihood = weighted_sum / total_weight if total_weight > 0 else 0
+
+        # Paste dominance override: if the majority of code was pasted, enforce a minimum score.
+        # This covers vibe coding / copy-paste sessions that other signals undercount.
+        final_paste_ratio = paste_ratio_early  # already computed above
+        if final_paste_ratio > 0.85:
+            ai_likelihood = max(ai_likelihood, 88)
+        elif final_paste_ratio > 0.70:
+            ai_likelihood = max(ai_likelihood, 75)
+        elif final_paste_ratio > 0.50:
+            ai_likelihood = max(ai_likelihood, 60)
+
         ai_likelihood = min(100, max(0, round(ai_likelihood, 1)))
 
         # Confidence: higher if we have more behavioral data
@@ -2245,6 +2296,13 @@ async def session_end(session_id: str, req: SessionEndRequest):
         # Generate personalized tips
         tips = generate_tips(skill_level, ai_probability, detection_result["signals"])
 
+        # Determine primary language: prefer snapshotLanguage (file open at end),
+        # fall back to last language used, then existing language field.
+        primary_language = (
+            req.snapshotLanguage
+            or (req.languagesUsed[-1] if req.languagesUsed else None)
+        )
+
         update_data = {
             "status": "completed",
             "endTime": firestore.SERVER_TIMESTAMP,
@@ -2256,6 +2314,7 @@ async def session_end(session_id: str, req: SessionEndRequest):
             "idleDuration": req.idleDuration,
             "filesEdited": req.filesEdited,
             "languagesUsed": req.languagesUsed,
+            **({"language": primary_language} if primary_language else {}),
             "stats": {
                 "skillLevel": skill_level,
                 "confidence": confidence,
@@ -2565,6 +2624,382 @@ async def get_quest_languages():
         for lang, count in language_counts.items()
     ]}
 
+# --- Personalized Daily Quest System ---
+
+async def _get_user_context(user_id: str) -> dict:
+    """Build user context from recent sessions and quest meta for personalized generation."""
+    from datetime import date as date_type
+    context = {
+        "skill_level": "Beginner",
+        "language": "python",
+        "difficulty_score": 3,
+        "last_generated_date": None,
+        "last_skill_level": None,
+        "undo_rate": 0.0,
+        "paste_rate": 0.0,
+        "idle_ratio": 0.0,
+        "avg_session_duration": 0,
+        "recent_quest_performance": [],
+        "weak_areas": [],
+    }
+    try:
+        # Fetch quest meta
+        meta_ref = db.collection("student_quest_meta").document(user_id)
+        meta_snap = meta_ref.get()
+        if meta_snap.exists:
+            meta = meta_snap.to_dict()
+            context["difficulty_score"] = meta.get("difficultyScore", 3)
+            context["last_generated_date"] = meta.get("lastGeneratedDate")
+            context["last_skill_level"] = meta.get("lastSkillLevel")
+            context["weak_areas"] = meta.get("weakAreas", [])
+            context["recent_quest_performance"] = meta.get("recentQuestPerformance", [])
+
+        # Fetch last 5 sessions
+        try:
+            sessions_query = db.collection("sessions").where(
+                filter=FieldFilter("userId", "==", user_id)
+            ).order_by("timestamp", direction=firestore.Query.DESCENDING).limit(5)
+            sessions_docs = list(sessions_query.stream())
+        except Exception:
+            sessions_query = db.collection("sessions").where(
+                filter=FieldFilter("userId", "==", user_id)
+            )
+            sessions_docs = list(sessions_query.stream())[:5]
+
+        if sessions_docs:
+            skill_counts = {"Beginner": 0, "Intermediate": 0, "Advanced": 0}
+            lang_counts = {}
+            total_undos, total_keystrokes, total_pastes = 0, 0, 0
+            total_active, total_idle = 0.0, 0.0
+
+            for doc in sessions_docs:
+                data = doc.to_dict()
+                skill = data.get("stats", {}).get("skillLevel")
+                if skill and skill in skill_counts:
+                    skill_counts[skill] += 1
+                for lang in data.get("languagesUsed", []):
+                    nl = _normalize_language(lang)
+                    lang_counts[nl] = lang_counts.get(nl, 0) + 1
+                bs = data.get("behavioralSignals", {})
+                total_undos += bs.get("totalUndos", 0)
+                total_keystrokes += data.get("totalKeystrokes", 0)
+                total_pastes += data.get("totalPastes", 0)
+                total_active += data.get("activeDuration", 0)
+                total_idle += data.get("idleDuration", 0)
+
+            context["skill_level"] = max(skill_counts, key=skill_counts.get)
+            if lang_counts:
+                context["language"] = max(lang_counts, key=lang_counts.get)
+            if total_keystrokes > 0:
+                context["undo_rate"] = round(total_undos / total_keystrokes, 3)
+                context["paste_rate"] = round(total_pastes / total_keystrokes, 3)
+            total_time = total_active + total_idle
+            if total_time > 0:
+                context["idle_ratio"] = round(total_idle / total_time, 2)
+            context["avg_session_duration"] = int(total_active / max(len(sessions_docs), 1))
+
+    except Exception as e:
+        print(f"Error building user context: {e}")
+    return context
+
+
+def _generate_personalized_quests_ai(context: dict) -> list:
+    """Generate 3 personalized quests using Claude based on user context."""
+    if not _anthropic_client:
+        return []
+
+    skill = context["skill_level"]
+    lang = context["language"]
+    diff = context["difficulty_score"]
+    undo_rate = context["undo_rate"]
+    paste_rate = context["paste_rate"]
+    idle_ratio = context["idle_ratio"]
+    weak_areas = context.get("weak_areas", [])
+    recent_perf = context.get("recent_quest_performance", [])
+
+    xp_map = {
+        "Beginner": (30, 70),
+        "Intermediate": (65, 120),
+        "Advanced": (110, 180),
+    }
+    xp_min, xp_max = xp_map.get(skill, (40, 90))
+
+    # Infer weak areas from behavior if not stored
+    if not weak_areas:
+        if undo_rate > 0.08:
+            weak_areas.append("logic and problem structuring")
+        if paste_rate > 0.05:
+            weak_areas.append("writing code from scratch")
+        if idle_ratio > 0.4:
+            weak_areas.append("recalling syntax quickly")
+
+    weak_area_str = ", ".join(weak_areas) if weak_areas else "general practice"
+    perf_str = ""
+    if recent_perf:
+        last = recent_perf[-3:]
+        perf_str = f"Recent quest results: {last}. "
+
+    prompt = f"""You are an adaptive coding quest generator for a developer skill tracking platform.
+
+Student profile:
+- Skill level: {skill}
+- Primary language: {lang}
+- Current difficulty score: {diff}/10
+- Weak areas detected: {weak_area_str}
+- Undo rate: {undo_rate} (high = struggles with logic)
+- Paste rate: {paste_rate} (high = relies on copy-paste)
+- Idle ratio: {idle_ratio} (high = thinks slowly / recalls syntax poorly)
+- {perf_str}
+
+Generate exactly 3 coding quests for {lang} language.
+Quest 1 — type "reinforcement": matches current difficulty ({diff}/10), reinforces {skill} concepts
+Quest 2 — type "stretch": difficulty {min(diff + 2, 10)}/10, pushes toward next level
+Quest 3 — type "weak_area": directly targets weak area "{weak_area_str}", easier ({max(diff - 1, 1)}/10)
+
+Return ONLY valid JSON array. No markdown, no explanation.
+
+Each quest object must have:
+- "title": short catchy name (2-4 words)
+- "task": clear description of what to code (1-3 sentences)
+- "xp": integer between {xp_min} and {xp_max}
+- "questType": one of "reinforcement", "stretch", "weak_area"
+- "testCases": 1-3 test case objects
+
+Test case types:
+1. {{"type": "code_contains", "expected": ["pattern1", "pattern2"]}} — ALL must appear
+2. {{"type": "code_not_contains", "expected": ["forbidden"]}} — NONE should appear
+3. {{"type": "code_contains_any", "expected": ["opt1", "opt2"]}} — at least ONE must appear
+
+Rules:
+- Use {lang}-specific syntax in test cases
+- Tasks must be practical and solvable in under 15 minutes
+- Do NOT repeat common generic tasks (avoid "hello world", "fibonacci" unless advanced)
+- Difficulty {diff}/10 means: {"basic syntax" if diff <= 3 else "moderate logic" if diff <= 6 else "complex algorithms and patterns"}
+
+Return ONLY the JSON array of 3 quest objects."""
+
+    try:
+        response = _anthropic_client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=3000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        text = response.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3].strip()
+
+        quests = json.loads(text)
+        if not isinstance(quests, list):
+            return []
+
+        def _sanitize_test_cases(raw):
+            """Ensure testCases have flat string arrays (Firestore forbids nested arrays)."""
+            result = []
+            for tc in (raw or []):
+                if not isinstance(tc, dict):
+                    continue
+                expected = tc.get("expected", [])
+                flat = []
+                for item in expected:
+                    if isinstance(item, list):
+                        flat.extend(str(x) for x in item)
+                    else:
+                        flat.append(str(item))
+                result.append({"type": str(tc.get("type", "code_contains")), "expected": flat})
+            return result
+
+        valid = []
+        for q in quests:
+            if isinstance(q, dict) and "title" in q and "task" in q:
+                valid.append({
+                    "title": str(q.get("title", "")),
+                    "task": str(q.get("task", "")),
+                    "xp": int(q.get("xp", 60)),
+                    "questType": str(q.get("questType", "reinforcement")),
+                    "testCases": _sanitize_test_cases(q.get("testCases", [])),
+                    "language": lang,
+                    "level": skill,
+                    "isPersonal": True,
+                })
+        print(f"Generated {len(valid)} personalized quests for user ({skill}/{lang}/diff:{diff})")
+        return valid
+    except Exception as e:
+        print(f"Personalized quest generation error: {e}")
+        return []
+
+
+@app.get("/quests/daily/{user_id}")
+async def get_daily_quests(user_id: str):
+    """Return today's personalized quests for a user. Regenerates if date changed or skill level changed."""
+    from datetime import date as date_type
+    today = date_type.today().isoformat()
+
+    try:
+        # Check for cached quests today
+        daily_ref = db.collection("personal_quests").document(f"{user_id}_{today}")
+        daily_snap = daily_ref.get()
+
+        if daily_snap.exists:
+            data = daily_snap.to_dict()
+            meta_ref = db.collection("student_quest_meta").document(user_id)
+            meta_snap = meta_ref.get()
+            current_skill = "Beginner"
+            if meta_snap.exists:
+                current_skill = meta_snap.to_dict().get("lastSkillLevel", "Beginner")
+
+            # Return cached if skill level hasn't changed
+            if data.get("skillLevel") == current_skill:
+                return {
+                    "quests": data.get("quests", []),
+                    "date": today,
+                    "cached": True,
+                    "skillLevel": current_skill,
+                    "language": data.get("language", "python"),
+                }
+
+        # Generate new personalized quests
+        context = await _get_user_context(user_id)
+        quests = _generate_personalized_quests_ai(context)
+
+        # Fallback to generic quests if AI fails
+        if not quests:
+            quests = await _get_or_generate_quests(context["language"], context["skill_level"], 3)
+            for q in quests:
+                q["questType"] = "reinforcement"
+
+        if not quests:
+            raise HTTPException(status_code=404, detail="No quests could be generated. Ensure ANTHROPIC_API_KEY is set.")
+
+        # Save each quest to the global quests collection so validate_solution can find them
+        saved_quests = []
+        for i, q in enumerate(quests):
+            doc_id = f"personal_{user_id}_{today}_{q.get('questType', 'q')}_{i}"
+            doc_ref = db.collection("quests").document(doc_id)
+            # Serialize testCases to JSON string to avoid Firestore nested-array restriction
+            test_cases = q.get("testCases", [])
+            quest_data = {
+                **{k: v for k, v in q.items() if k != "testCases"},
+                "testCases": json.dumps(test_cases),
+                "userId": user_id,
+                "generatedAt": firestore.SERVER_TIMESTAMP,
+                "createdAt": firestore.SERVER_TIMESTAMP,
+            }
+            try:
+                doc_ref.set(quest_data)
+            except Exception as e:
+                print(f"Error saving quest '{doc_id}' to Firestore: {e}")
+                raise
+            saved_quests.append({**q, "id": doc_id})
+
+        _rebuild_quest_lookup()
+
+        # Cache daily quests for this user (strip testCases — Firestore forbids nested arrays)
+        quests_for_cache = [
+            {k: v for k, v in q.items() if k != "testCases"}
+            | {"testCasesCount": len(q.get("testCases", []))}
+            for q in saved_quests
+        ]
+        try:
+            daily_ref.set({
+                "userId": user_id,
+                "date": today,
+                "quests": quests_for_cache,
+                "skillLevel": context["skill_level"],
+                "language": context["language"],
+                "generatedAt": firestore.SERVER_TIMESTAMP,
+            })
+        except Exception as e:
+            print(f"Error saving personal_quests cache: {e}")
+            raise
+
+        # Update meta
+        meta_ref = db.collection("student_quest_meta").document(user_id)
+        try:
+            meta_ref.set({
+                "lastGeneratedDate": today,
+                "lastSkillLevel": context["skill_level"],
+                "difficultyScore": context["difficulty_score"],
+                "weakAreas": context.get("weak_areas", []),
+            }, merge=True)
+        except Exception as e:
+            print(f"Error saving student_quest_meta: {e}")
+            raise
+
+        return {
+            "quests": saved_quests,
+            "date": today,
+            "cached": False,
+            "skillLevel": context["skill_level"],
+            "language": context["language"],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Daily quest error for {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get daily quests: {str(e)}")
+
+
+@app.post("/quests/complete")
+async def quest_completed(req: QuestCompleteRequest):
+    """Update difficulty score after quest completion."""
+    if not req.passed:
+        return {"updated": False}
+
+    try:
+        meta_ref = db.collection("student_quest_meta").document(req.userId)
+        meta_snap = meta_ref.get()
+        current_score = 3
+        total_completed = 0
+        recent_perf = []
+
+        if meta_snap.exists:
+            data = meta_snap.to_dict()
+            current_score = data.get("difficultyScore", 3)
+            total_completed = data.get("totalQuestsCompleted", 0)
+            recent_perf = data.get("recentQuestPerformance", [])
+
+        # Difficulty scaling logic
+        fast = req.completionTimeMs < req.estimatedTimeMs
+        no_hints = req.hintsUsed == 0
+        slow = req.completionTimeMs > (req.estimatedTimeMs * 2)
+
+        if fast and no_hints:
+            new_score = min(current_score + 2, 10)
+        elif slow or req.hintsUsed > 1:
+            new_score = max(current_score - 1, 1)
+        else:
+            new_score = current_score
+
+        # Track performance
+        recent_perf.append({
+            "questId": req.questId,
+            "questType": req.questType,
+            "completionTimeMs": req.completionTimeMs,
+            "hintsUsed": req.hintsUsed,
+            "difficultyScoreBefore": current_score,
+        })
+        recent_perf = recent_perf[-10:]  # keep last 10
+
+        meta_ref.set({
+            "difficultyScore": new_score,
+            "totalQuestsCompleted": total_completed + 1,
+            "recentQuestPerformance": recent_perf,
+        }, merge=True)
+
+        return {
+            "updated": True,
+            "difficultyScore": new_score,
+            "change": new_score - current_score,
+        }
+
+    except Exception as e:
+        print(f"Quest complete update error: {e}")
+        return {"updated": False, "error": str(e)}
+
+
 # --- Quest Admin CRUD ---
 
 @app.post("/admin/quests/seed")
@@ -2733,6 +3168,12 @@ def _rebuild_quest_lookup():
         for doc in docs:
             data = doc.to_dict()
             data["id"] = doc.id
+            # Deserialize testCases if stored as JSON string
+            if isinstance(data.get("testCases"), str):
+                try:
+                    data["testCases"] = json.loads(data["testCases"])
+                except Exception:
+                    data["testCases"] = []
             merged[doc.id] = data
 
         ALL_QUESTS = merged
@@ -2796,16 +3237,15 @@ async def analyze_code(session: CodeSession):
             elif "def " in session.code or "import " in session.code:
                 skill_level = "Intermediate"
 
-        # Use AI Detection Engine for quest submissions too
-        # For quests, we only have duration + keystrokes (no full behavioral signals)
+        bs = session.behavioralSignals or {}
         detection_input = {
             "totalKeystrokes": session.keystrokes,
-            "totalPastes": 0,
-            "totalEdits": 0,
+            "totalPastes": bs.get("totalClipboardPastes", 0),
+            "totalEdits": session.keystrokes,
             "activeDuration": session.duration,
-            "idleDuration": 0,
-            "totalDuration": session.duration,
-            "behavioralSignals": {}
+            "idleDuration": bs.get("idleDuration", 0),
+            "totalDuration": session.duration + bs.get("idleDuration", 0),
+            "behavioralSignals": bs,
         }
         detection_result = AIDetectionEngine.analyze(detection_input)
         ai_probability = detection_result["aiLikelihoodScore"]
@@ -2868,3 +3308,12 @@ async def analyze_code(session: CodeSession):
     except Exception as e:
         print(f"Server Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "7860")),
+    )

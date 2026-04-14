@@ -1,0 +1,38 @@
+name: Build VSCode extension
+
+on:
+  push:
+    tags:
+      - 'ext-v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: extension/package-lock.json
+
+      - run: npm ci
+      - run: npm install -g @vscode/vsce
+      - run: vsce package --out devskill-extension.vsix
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: devskill-extension-vsix
+          path: extension/devskill-extension.vsix
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/ext-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: extension/devskill-extension.vsix
