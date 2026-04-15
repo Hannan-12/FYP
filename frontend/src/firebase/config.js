@@ -1,6 +1,6 @@
 // 1. Imports
 import { initializeApp } from "firebase/app";
-import { getAuth, setPersistence, browserSessionStoragePersistence } from "firebase/auth";
+import { getAuth, setPersistence, browserSessionPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 // 2. Your Configuration
@@ -18,6 +18,6 @@ const app = initializeApp(firebaseConfig);
 
 // 4. Auth — session-only persistence (expires when browser/tab is closed)
 export const auth = getAuth(app);
-setPersistence(auth, browserSessionStoragePersistence);
+setPersistence(auth, browserSessionPersistence);
 
 export const db = getFirestore(app);
