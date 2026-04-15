@@ -2,6 +2,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 
+// Landing
+import LandingPage from "./pages/LandingPage";
+
 // Auth Pages
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
@@ -32,6 +35,8 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
 
+          <Route path="/" element={<LandingPage />} />
+
           <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminLayout /></ProtectedRoute>}>
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="students" element={<StudentList />} />
@@ -48,7 +53,7 @@ function App() {
             <Route path="profile" element={<UserProfile />} />
           </Route>
 
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </Router>
