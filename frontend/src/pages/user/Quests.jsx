@@ -57,6 +57,7 @@ const Quests = () => {
   const [userSkillLevel, setUserSkillLevel] = useState("Beginner");
   const [detectedLanguage, setDetectedLanguage] = useState(null);
   const [selectedLanguage, setSelectedLanguage] = useState("python");
+  const [availableLanguages, setAvailableLanguages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [keystrokes, setKeystrokes] = useState(0);
@@ -76,24 +77,74 @@ const Quests = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // --- Detect language from user's coding sessions ---
+  // --- Fetch quests for a specific language ---
+  const fetchQuestsForLanguage = async (lang) => {
+    if (!user?.uid) return;
+    setLoading(true);
+    setError(null);
+    setSelectedLanguage(lang);
+    try {
+      const url = `${API_BASE_URL}/quests/daily/${user.uid}?language=${encodeURIComponent(lang)}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      const data = await response.json();
+      setQuests(data.quests || []);
+      setDailyMeta({ date: data.date, cached: data.cached, skillLevel: data.skillLevel, language: lang });
+      if (data.skillLevel) setUserSkillLevel(data.skillLevel);
+    } catch (err) {
+      setError("Unable to load quests. Make sure the backend is running.");
+      setQuests([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- Detect language and available languages from sessions ---
   useEffect(() => {
     const detectLanguage = async () => {
       if (!user?.uid) return;
       try {
-        const response = await fetch(`${API_BASE_URL}/detect-language/${user.uid}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.language) {
-            setDetectedLanguage(data.language);
-            setSelectedLanguage(data.language);
+        // Get user sessions to build language list
+        const sessionsQuery = query(
+          collection(db, "sessions"),
+          where("userId", "==", user.uid),
+          orderBy("timestamp", "desc"),
+          limit(20)
+        );
+        let snap;
+        try { snap = await getDocs(sessionsQuery); }
+        catch { snap = await getDocs(query(collection(db, "sessions"), where("userId", "==", user.uid))); }
+
+        const langSet = new Set();
+        snap.forEach(d => {
+          const s = d.data();
+          (s.languagesUsed || []).forEach(l => langSet.add(l.toLowerCase()));
+          if (s.language) langSet.add(s.language.toLowerCase());
+        });
+
+        // Also try the detect-language endpoint for the most recent one
+        try {
+          const resp = await fetch(`${API_BASE_URL}/detect-language/${user.uid}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.language) {
+              setDetectedLanguage(data.language);
+              langSet.add(data.language.toLowerCase());
+            }
           }
-        }
+        } catch { /* ignore */ }
+
+        // Build ordered list: detected first, then rest alphabetically
+        const detected = detectedLanguage || [...langSet][0] || "python";
+        const others = [...langSet].filter(l => l !== detected).sort();
+        setAvailableLanguages([detected, ...others]);
+        setSelectedLanguage(detected);
       } catch (err) {
         console.error("Language detection failed:", err);
       }
     };
     detectLanguage();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // --- Detect skill level from recent sessions ---
@@ -138,33 +189,12 @@ const Quests = () => {
     fetchUserSkillLevel();
   }, [user]);
 
-  // --- Fetch personalized daily quests for the user ---
+  // --- Fetch initial daily quests once language is detected ---
   useEffect(() => {
-    const fetchDailyQuests = async () => {
-      if (!user?.uid) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fetch(`${API_BASE_URL}/quests/daily/${user.uid}`);
-        if (!response.ok) throw new Error(`Server error: ${response.status}`);
-        const data = await response.json();
-        setQuests(data.quests || []);
-        setDailyMeta({ date: data.date, cached: data.cached, skillLevel: data.skillLevel, language: data.language });
-        if (data.language) {
-          setDetectedLanguage(data.language);
-          setSelectedLanguage(data.language);
-        }
-        if (data.skillLevel) setUserSkillLevel(data.skillLevel);
-      } catch (err) {
-        console.error("Failed to fetch daily quests:", err);
-        setError("Unable to load your daily quests. Make sure the backend is running.");
-        setQuests([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (user?.uid) fetchDailyQuests();
+    if (user?.uid && selectedLanguage) {
+      fetchQuestsForLanguage(selectedLanguage);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
 
 // --- Monaco mount: attach behavioral signal trackers ---
@@ -614,11 +644,22 @@ const Quests = () => {
         </p>
       </div>
 
-      {/* Language indicator */}
-      {detectedLanguage && (
-        <div className="flex items-center justify-center gap-2">
-          <Globe className="text-slate-500" size={16} />
-          <span className="text-slate-500 text-sm capitalize">{detectedLanguage}</span>
+      {/* Language Tabs */}
+      {availableLanguages.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {availableLanguages.map((lang) => (
+            <button
+              key={lang}
+              onClick={() => fetchQuestsForLanguage(lang)}
+              className={`px-4 py-2 rounded-full text-sm font-semibold capitalize transition-all ${
+                selectedLanguage === lang
+                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
+                  : "bg-slate-800 text-slate-400 border border-slate-700 hover:border-indigo-500/50 hover:text-slate-200"
+              }`}
+            >
+              {lang === detectedLanguage ? `★ ${lang}` : lang}
+            </button>
+          ))}
         </div>
       )}
 

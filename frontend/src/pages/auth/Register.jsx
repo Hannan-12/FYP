@@ -4,19 +4,33 @@ import { auth, db } from "../../firebase/config";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { motion } from "framer-motion";
-import { UserPlus, Loader2, ArrowRight } from "lucide-react";
+import { UserPlus, Loader2, ArrowRight, CheckCircle2, XCircle } from "lucide-react";
+
+const EMAIL_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/;
+
+const PwdCheck = ({ ok, label }) => (
+  <div className={`flex items-center gap-1.5 text-xs ${ok ? "text-green-400" : "text-slate-500"}`}>
+    {ok ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+    {label}
+  </div>
+);
 
 const Register = () => {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: ""
-  });
-  
+  const [formData, setFormData] = useState({ name: "", email: "", password: "", confirmPassword: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pwdFocused, setPwdFocused] = useState(false);
   const navigate = useNavigate();
+
+  const pwd = formData.password;
+  const pwdChecks = {
+    length:    pwd.length >= 12,
+    uppercase: /[A-Z]/.test(pwd),
+    lowercase: /[a-z]/.test(pwd),
+    number:    /[0-9]/.test(pwd),
+    special:   /[^A-Za-z0-9]/.test(pwd),
+  };
+  const allChecksPassed = Object.values(pwdChecks).every(Boolean);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -27,14 +41,15 @@ const Register = () => {
     e.preventDefault();
     setError("");
 
-    if (formData.password !== formData.confirmPassword) return setError("Passwords do not match");
-    if (formData.password.length < 6) return setError("Password must be at least 6 characters");
+    const trimmedEmail = formData.email.trim();
+    if (!EMAIL_REGEX.test(trimmedEmail) || trimmedEmail.includes("..")) {
+      return setError("Please enter a valid email address.");
+    }
+    if (formData.password !== formData.confirmPassword) return setError("Passwords do not match.");
+    if (!allChecksPassed) return setError("Password does not meet all requirements.");
 
     setLoading(true);
-
     try {
-      // Trim all fields to ensure no whitespace issues
-      const trimmedEmail = formData.email.trim();
       const trimmedPassword = formData.password.trim();
       const trimmedName = formData.name.trim();
 
@@ -53,6 +68,8 @@ const Register = () => {
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {
         setError("This email is already registered.");
+      } else if (err.code === "auth/weak-password") {
+        setError("Password is too weak. Please meet all requirements.");
       } else {
         setError("Failed to create account. Please try again.");
       }
@@ -62,40 +79,31 @@ const Register = () => {
 
   return (
     <div className="min-h-screen flex bg-[#0f172a] font-sans">
-      {/* Left Side - Visual (Cyan/Teal Theme for differentiation) */}
+      {/* Left Side */}
       <div className="hidden lg:flex w-1/2 bg-cyan-900 relative overflow-hidden items-center justify-center">
         <div className="absolute inset-0 bg-gradient-to-br from-cyan-800 to-blue-900 opacity-90" />
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20" />
-        
         <div className="relative z-10 text-center px-12">
-           <motion.div 
-             initial={{ y: 20, opacity: 0 }}
-             animate={{ y: 0, opacity: 1 }}
-             transition={{ delay: 0.2 }}
-           >
-             <h1 className="text-5xl font-bold text-white mb-6">Join the Community</h1>
-             <p className="text-cyan-100 text-xl leading-relaxed">
-               Start your journey to coding mastery. Track progress, analyze skills, and improve daily.
-             </p>
-           </motion.div>
+          <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
+            <h1 className="text-5xl font-bold text-white mb-6">Join the Community</h1>
+            <p className="text-cyan-100 text-xl leading-relaxed">
+              Start your journey to coding mastery. Track progress, analyze skills, and improve daily.
+            </p>
+          </motion.div>
         </div>
       </div>
 
       {/* Right Side - Form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="max-w-md w-full">
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }}
-          >
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}>
             <h2 className="text-3xl font-bold text-white mb-2">Create Account</h2>
             <p className="text-slate-400 mb-8">Sign up to get started.</p>
 
             {error && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }} 
-                animate={{ opacity: 1, height: 'auto' }}
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
                 className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg mb-6 text-sm"
               >
                 {error}
@@ -128,33 +136,42 @@ const Register = () => {
                   required
                 />
               </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
-                    <input
-                    type="password"
-                    name="password"
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 text-white outline-none transition-all"
-                    placeholder="••••••••"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                    />
-                </div>
 
-                <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Confirm</label>
-                    <input
-                    type="password"
-                    name="confirmPassword"
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 text-white outline-none transition-all"
-                    placeholder="••••••••"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    required
-                    />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
+                <input
+                  type="password"
+                  name="password"
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 text-white outline-none transition-all"
+                  placeholder="••••••••"
+                  value={formData.password}
+                  onChange={handleChange}
+                  onFocus={() => setPwdFocused(true)}
+                  onBlur={() => setPwdFocused(false)}
+                  required
+                />
+                {(pwdFocused || pwd.length > 0) && (
+                  <div className="mt-2 p-3 bg-slate-800/80 border border-slate-700 rounded-lg grid grid-cols-2 gap-1.5">
+                    <PwdCheck ok={pwdChecks.length}    label="Min 12 characters" />
+                    <PwdCheck ok={pwdChecks.uppercase} label="Uppercase letter" />
+                    <PwdCheck ok={pwdChecks.lowercase} label="Lowercase letter" />
+                    <PwdCheck ok={pwdChecks.number}    label="Number" />
+                    <PwdCheck ok={pwdChecks.special}   label="Special character" />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Confirm Password</label>
+                <input
+                  type="password"
+                  name="confirmPassword"
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 text-white outline-none transition-all"
+                  placeholder="••••••••"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  required
+                />
               </div>
 
               <button
