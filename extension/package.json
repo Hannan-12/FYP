@@ -3,7 +3,7 @@
   "displayName": "DevSkill Tracker",
   "publisher": "Hannan-12",
   "description": "Tracks real-time coding activity for DevSkill Tracker",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "repository": {
     "type": "git",
     "url": "https://github.com/Hannan-12/FYP"
