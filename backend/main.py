@@ -844,8 +844,10 @@ async def session_update(session_id: str, req: SessionUpdateRequest):
 
 
 def fuse_skill_with_behavior(
-    codebert_probs: list,          # [adv_prob, beg_prob, mid_prob] from model
+    codebert_probs: list,          # [Beginner, Intermediate, Advanced] probs from model
     req: "SessionEndRequest",
+    groq_label: str = None,        # optional Groq classification result
+    groq_confidence: float = 0.0,
 ) -> tuple[str, float]:
     """
     Combine CodeBERT class probabilities with behavioral signals to produce
@@ -906,20 +908,34 @@ def fuse_skill_with_behavior(
     else:
         b_beg, b_mid, b_adv = 0.05, 0.30, 0.65
 
-    # Weighted fusion (CodeBERT 60%, behavioral 40%)
-    W_CB, W_BH = 0.60, 0.40
-    f_adv = W_CB * adv_p + W_BH * b_adv
-    f_beg = W_CB * beg_p + W_BH * b_beg
-    f_mid = W_CB * mid_p + W_BH * b_mid
+    # Build Groq probability vector if available
+    if groq_label and groq_label in ("Beginner", "Intermediate", "Advanced"):
+        g = {"Beginner": 0.05, "Intermediate": 0.05, "Advanced": 0.05}
+        g[groq_label] = groq_confidence
+        # Redistribute remaining probability
+        remaining = 1.0 - groq_confidence
+        others = [k for k in g if k != groq_label]
+        for k in others:
+            g[k] = remaining / 2
+        g_beg, g_mid, g_adv = g["Beginner"], g["Intermediate"], g["Advanced"]
+        # Groq 60%, behavioral 30%, CodeBERT 10%
+        W_GQ, W_CB, W_BH = 0.60, 0.10, 0.30
+        f_beg = W_GQ * g_beg + W_CB * beg_p + W_BH * b_beg
+        f_mid = W_GQ * g_mid + W_CB * mid_p + W_BH * b_mid
+        f_adv = W_GQ * g_adv + W_CB * adv_p + W_BH * b_adv
+        print(f"[SkillFusion] Groq={groq_label}({groq_confidence:.2f}) behavioral={behavioral_score:.2f} cb=[{beg_p:.2f},{mid_p:.2f},{adv_p:.2f}]")
+    else:
+        # No Groq: CodeBERT 60%, behavioral 40%
+        W_CB, W_BH = 0.60, 0.40
+        f_beg = W_CB * beg_p + W_BH * b_beg
+        f_mid = W_CB * mid_p + W_BH * b_mid
+        f_adv = W_CB * adv_p + W_BH * b_adv
+        print(f"[SkillFusion] (no Groq) behavioral={behavioral_score:.2f} cb=[{beg_p:.2f},{mid_p:.2f},{adv_p:.2f}]")
 
     fused = {"Beginner": f_beg, "Intermediate": f_mid, "Advanced": f_adv}
     best_label = max(fused, key=fused.get)
     confidence = fused[best_label] / sum(fused.values()) * 100
-
-    print(f"[SkillFusion] behavioral_score={behavioral_score:.2f} "
-          f"cb=[Beg:{beg_p:.2f} Mid:{mid_p:.2f} Adv:{adv_p:.2f}] "
-          f"bh=[Beg:{b_beg:.2f} Mid:{b_mid:.2f} Adv:{b_adv:.2f}] "
-          f"→ {best_label} ({confidence:.1f}%)")
+    print(f"[SkillFusion] → {best_label} ({confidence:.1f}%)")
 
     return best_label, confidence
 
@@ -936,15 +952,19 @@ async def session_end(session_id: str, req: SessionEndRequest):
         num_languages = len(req.languagesUsed) if req.languagesUsed else 0
         num_files = len(req.filesEdited) if req.filesEdited else 0
 
-        # Classify skill: CodeBERT fused with behavioral signals
+        # Classify skill: Groq (primary) + CodeBERT + behavioral fusion
         skill_level = "Beginner"
         confidence = 0.0
-        if req.snapshotCode and ai_model:
+        if req.snapshotCode:
+            lang = (req.languagesUsed or ["python"])[0]
+            groq_label, groq_conf = _classify_code_groq(req.snapshotCode, lang)
             try:
-                probs = ai_model.predict_proba([req.snapshotCode])[0]  # [adv, beg, mid]
-                skill_level, confidence = fuse_skill_with_behavior(probs, req)
+                probs = ai_model.predict_proba([req.snapshotCode])[0] if ai_model else [0.33, 0.34, 0.33]
+                skill_level, confidence = fuse_skill_with_behavior(probs, req, groq_label, groq_conf)
             except Exception as model_err:
                 print(f"CodeBERT error on snapshot: {model_err}")
+                if groq_label:
+                    skill_level, confidence = groq_label, groq_conf * 100
                 advanced_langs = {"typescript", "rust", "go", "kotlin", "scala", "swift"}
                 intermediate_langs = {"javascript", "java", "csharp", "c#", "python", "ruby", "php"}
                 used_lower = [l.lower() for l in (req.languagesUsed or [])]
@@ -1037,6 +1057,38 @@ try:
         print("Warning: GROQ_API_KEY not set. AI quest generation disabled.")
 except ImportError:
     print("Warning: groq package not installed. Run: pip install groq")
+
+def _classify_code_groq(code: str, language: str = "python") -> tuple:
+    """Use Groq/Llama to classify code skill level. Returns (label, confidence_0_to_1)."""
+    if not _groq_client or not code.strip():
+        return None, 0.0
+    prompt = f"""You are a code skill classifier. Classify the following {language} code as exactly one level: Beginner, Intermediate, or Advanced.
+
+Criteria:
+- Beginner: basic syntax, simple loops/conditions, no functions or trivial ones, no data structures beyond lists
+- Intermediate: functions, classes, error handling, standard library usage, moderate algorithms, OOP basics
+- Advanced: design patterns, complex algorithms, decorators/generators/metaclasses, async/concurrent code, system-level concepts, optimized data structures
+
+Return ONLY a JSON object with two keys: "level" (one of: Beginner, Intermediate, Advanced) and "confidence" (0.0 to 1.0).
+Example: {{"level": "Intermediate", "confidence": 0.85}}
+
+Code to classify:
+```{language}
+{code[:3000]}
+```"""
+    try:
+        text = _strip_markdown_fences(_call_groq(prompt, max_tokens=50))
+        result = json.loads(text)
+        label = result.get("level", "").strip()
+        if label not in ("Beginner", "Intermediate", "Advanced"):
+            return None, 0.0
+        confidence = float(result.get("confidence", 0.8))
+        print(f"[GroqClassifier] {label} ({confidence:.2f})")
+        return label, confidence
+    except Exception as e:
+        print(f"[GroqClassifier] Error: {e}")
+        return None, 0.0
+
 
 def _normalize_language(language: str) -> str:
     """Normalize language name to a standard key."""
@@ -1810,7 +1862,12 @@ async def analyze_code(session: CodeSession):
         skill_level = "Beginner"
         confidence = 0.0
 
-        if ai_model:
+        # Groq as primary classifier, CodeBERT as fallback
+        groq_label, groq_conf = _classify_code_groq(session.code, session.language or "python")
+        if groq_label:
+            skill_level = groq_label
+            confidence = groq_conf * 100
+        elif ai_model:
             skill_level = ai_model.predict([session.code])[0]
             probs = ai_model.predict_proba([session.code])[0]
             confidence = float(max(probs) * 100)
