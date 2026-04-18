@@ -54,7 +54,7 @@ app.add_middleware(
 )
 
 # --- AI Model Loading (CodeBERT) ---
-CODEBERT_LABEL2ID = {"Advanced": 0, "Beginner": 1, "Intermediate": 2}
+CODEBERT_LABEL2ID = {"Beginner": 0, "Intermediate": 1, "Advanced": 2}
 CODEBERT_ID2LABEL = {v: k for k, v in CODEBERT_LABEL2ID.items()}
 CODEBERT_MAX_LEN  = 256
 
@@ -100,29 +100,13 @@ class CodeBERTClassifier:
 
 
 ai_model = None
-_codebert_sources = [
-    os.getenv("CODEBERT_MODEL_ID", "Hannan-12/devskill-codebert"),
-    "ai_models/best_codebert_large",
-    "best_codebert_large",
-]
-for _src in _codebert_sources:
-    try:
-        if os.path.isdir(_src) or "/" in _src:
-            ai_model = CodeBERTClassifier(_src)
-            break
-    except Exception as _ex:
-        print(f"Warning: CodeBERT load failed at '{_src}': {_ex}")
-
-if ai_model is None:
-    # Legacy sklearn fallback
-    for _pkl in ["ai_models/skill_classifier.pkl", "skill_classifier.pkl"]:
-        if os.path.exists(_pkl):
-            try:
-                ai_model = joblib.load(_pkl)
-                print(f"Sklearn model loaded from '{_pkl}' (CodeBERT not found)")
-                break
-            except Exception as _ex:
-                print(f"Warning: sklearn model load failed: {_ex}")
+_local_model = "ai_models/best_codebert_large"
+_hub_model   = "Hannan-12/devskill-codebert"
+_model_src   = _local_model if os.path.isdir(_local_model) else _hub_model
+try:
+    ai_model = CodeBERTClassifier(_model_src)
+except Exception as _ex:
+    print(f"Warning: CodeBERT load failed from '{_model_src}': {_ex}")
 
 if ai_model is None:
     print("Warning: No AI model found — keyword fallback will be used.")
@@ -2258,7 +2242,7 @@ def fuse_skill_with_behavior(
       score 0.35-0.65 → lean Intermediate
       score > 0.65  → lean Advanced
     """
-    adv_p, beg_p, mid_p = codebert_probs  # already sum to 1.0
+    beg_p, mid_p, adv_p = codebert_probs  # model outputs [Beginner, Intermediate, Advanced]
 
     # --- Build behavioral score ---
     total_ks = max(req.totalKeystrokes, 1)
@@ -2311,17 +2295,16 @@ def fuse_skill_with_behavior(
     f_beg = W_CB * beg_p + W_BH * b_beg
     f_mid = W_CB * mid_p + W_BH * b_mid
 
-    label_map = {0: "Advanced", 1: "Beginner", 2: "Intermediate"}
-    fused = [f_adv, f_beg, f_mid]
-    best_idx = int(max(range(3), key=lambda i: fused[i]))
-    confidence = fused[best_idx] / sum(fused) * 100
+    fused = {"Beginner": f_beg, "Intermediate": f_mid, "Advanced": f_adv}
+    best_label = max(fused, key=fused.get)
+    confidence = fused[best_label] / sum(fused.values()) * 100
 
     print(f"[SkillFusion] behavioral_score={behavioral_score:.2f} "
-          f"cb=[Adv:{adv_p:.2f} Beg:{beg_p:.2f} Mid:{mid_p:.2f}] "
-          f"bh=[Adv:{b_adv:.2f} Beg:{b_beg:.2f} Mid:{b_mid:.2f}] "
-          f"→ {label_map[best_idx]} ({confidence:.1f}%)")
+          f"cb=[Beg:{beg_p:.2f} Mid:{mid_p:.2f} Adv:{adv_p:.2f}] "
+          f"bh=[Beg:{b_beg:.2f} Mid:{b_mid:.2f} Adv:{b_adv:.2f}] "
+          f"→ {best_label} ({confidence:.1f}%)")
 
-    return label_map[best_idx], confidence
+    return best_label, confidence
 
 
 @app.post("/session/{session_id}/end")
