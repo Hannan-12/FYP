@@ -1,7 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls *.md)"
+      "Bash(ls *.md)",
+      "Bash(npm run:*)",
+      "Bash(npx @vscode/vsce package --out devskill-extension.vsix)",
+      "Bash(git commit -m ':*)",
+      "Bash(gh release *)",
+      "Bash(gh auth *)",
+      "Bash(bash scripts/deploy-backend.sh)",
+      "WebSearch",
+      "Bash(git commit -m ' *)",
+      "Bash(sysctl -n machdep.cpu.brand_string)",
+      "Bash(sysctl -n hw.memsize)",
+      "Bash(awk '{print $1/1024/1024/1024 \" GB RAM\"}')",
+      "Bash(system_profiler SPDisplaysDataType)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('train_codebert.py'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('backend/train_codebert.py'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
+      "Bash(python3 -c \"import json; c=json.load\\(open\\('/Users/muhammadhannanhafeez/FYP/DevSkill-FYP/backend/ai_models/best_codebert_large/config.json'\\)\\); print\\(c.get\\('id2label'\\), c.get\\('label2id'\\)\\)\")"
     ]
   }
 }
