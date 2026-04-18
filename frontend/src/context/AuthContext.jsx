@@ -17,8 +17,6 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       try {
-        setLoading(true);
-
         if (currentUser) {
           // 1. User is logged in, now fetch their Role from Firestore
           const docRef = doc(db, "users", currentUser.uid);
