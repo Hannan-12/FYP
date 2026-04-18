@@ -170,17 +170,9 @@ const Quests = () => {
         }
 
         if (!snapshot.empty) {
-          const skillCounts = { Beginner: 0, Intermediate: 0, Advanced: 0 };
-          snapshot.forEach(doc => {
-            const skillLevel = doc.data().stats?.skillLevel;
-            if (skillLevel && skillCounts.hasOwnProperty(skillLevel)) {
-              skillCounts[skillLevel]++;
-            }
-          });
-          const detectedSkill = Object.entries(skillCounts).reduce((a, b) =>
-            skillCounts[a[0]] > skillCounts[b[0]] ? a : b
-          )[0];
-          setUserSkillLevel(detectedSkill);
+          // Use most recent session's skill level (consistent with dashboard)
+          const mostRecentSkill = snapshot.docs[0]?.data()?.stats?.skillLevel;
+          if (mostRecentSkill) setUserSkillLevel(mostRecentSkill);
         }
       } catch (error) {
         console.error("Failed to fetch user skill level:", error);

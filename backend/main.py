@@ -1356,7 +1356,9 @@ async def _get_user_context(user_id: str) -> dict:
                 total_idle += data.get("idleDuration", 0)
 
             context["latest_session_id"] = sessions_docs[0].id
-            context["skill_level"] = max(skill_counts, key=skill_counts.get)
+            # Use most recent session's skill level for consistency with dashboard
+            most_recent_skill = sessions_docs[0].to_dict().get("stats", {}).get("skillLevel")
+            context["skill_level"] = most_recent_skill if most_recent_skill in skill_counts else max(skill_counts, key=skill_counts.get)
             if lang_counts:
                 context["language"] = max(lang_counts, key=lang_counts.get)
             if total_keystrokes > 0:
@@ -1420,10 +1422,10 @@ Student profile:
 - Idle ratio: {idle_ratio} (high = thinks slowly / recalls syntax poorly)
 - {perf_str}
 
-Generate exactly 3 coding quests for {lang} language.
-Quest 1 — type "reinforcement": matches current difficulty ({diff}/10), reinforces {skill} concepts
-Quest 2 — type "stretch": difficulty {min(diff + 2, 10)}/10, pushes toward next level
-Quest 3 — type "weak_area": directly targets weak area "{weak_area_str}", easier ({max(diff - 1, 1)}/10)
+Generate exactly 10 coding quests for {lang} language.
+- 5 quests of type "reinforcement": match current difficulty ({diff}/10), reinforce {skill} concepts
+- 3 quests of type "stretch": difficulty {min(diff + 2, 10)}/10, push toward next level
+- 2 quests of type "weak_area": directly target weak area "{weak_area_str}", easier ({max(diff - 1, 1)}/10)
 
 Return ONLY valid JSON array. No markdown, no explanation.
 
@@ -1445,7 +1447,7 @@ Rules:
 - Do NOT repeat common generic tasks (avoid "hello world", "fibonacci" unless advanced)
 - Difficulty {diff}/10 means: {"basic syntax" if diff <= 3 else "moderate logic" if diff <= 6 else "complex algorithms and patterns"}
 
-Return ONLY the JSON array of 3 quest objects."""
+Return ONLY the JSON array of 10 quest objects."""
 
     try:
         text = _strip_markdown_fences(_call_groq(prompt, max_tokens=3000))
@@ -1509,39 +1511,19 @@ async def get_daily_quests(user_id: str, language: Optional[str] = None):
         skill = context["skill_level"]
         latest_session_id = context.get("latest_session_id") or today
 
-        # Cache key tied to latest session so new session = fresh quests
-        cache_key = f"{user_id}_{latest_session_id}_{lang}"
-        daily_ref = db.collection("personal_quests").document(cache_key)
-        daily_snap = daily_ref.get()
-
-        if daily_snap.exists:
-            data = daily_snap.to_dict()
-            if data.get("skillLevel") == skill:
-                return {
-                    "quests": data.get("quests", []),
-                    "date": today,
-                    "cached": True,
-                    "skillLevel": skill,
-                    "language": data.get("language", lang),
-                }
-
+        # Always generate fresh quests on every visit (no cache check)
         quests = _generate_personalized_quests_ai(context)
-
-        # Fallback to generic quests if AI fails
-        if not quests:
-            quests = await _get_or_generate_quests(lang, skill, 3)
-            for q in quests:
-                q["questType"] = "reinforcement"
 
         if not quests:
             raise HTTPException(status_code=404, detail="No quests could be generated. Check GROQ_API_KEY.")
 
-        # Save each quest to the global quests collection so validate_solution can find them
+        # Save quests to Firestore so validate_solution can find them by ID
+        import uuid as _uuid
+        visit_id = _uuid.uuid4().hex[:8]
         saved_quests = []
         for i, q in enumerate(quests):
-            doc_id = f"personal_{user_id}_{latest_session_id}_{lang}_{q.get('questType', 'q')}_{i}"
+            doc_id = f"personal_{user_id}_{latest_session_id}_{lang}_{visit_id}_{i}"
             doc_ref = db.collection("quests").document(doc_id)
-            # Serialize testCases to JSON string to avoid Firestore nested-array restriction
             test_cases = q.get("testCases", [])
             quest_data = {
                 **{k: v for k, v in q.items() if k != "testCases"},
@@ -1553,43 +1535,11 @@ async def get_daily_quests(user_id: str, language: Optional[str] = None):
             try:
                 doc_ref.set(quest_data)
             except Exception as e:
-                print(f"Error saving quest '{doc_id}' to Firestore: {e}")
+                print(f"Error saving quest '{doc_id}': {e}")
                 raise
             saved_quests.append({**q, "id": doc_id})
 
         _rebuild_quest_lookup()
-
-        # Cache daily quests for this user (strip testCases — Firestore forbids nested arrays)
-        quests_for_cache = [
-            {k: v for k, v in q.items() if k != "testCases"}
-            | {"testCasesCount": len(q.get("testCases", []))}
-            for q in saved_quests
-        ]
-        try:
-            daily_ref.set({
-                "userId": user_id,
-                "date": today,
-                "quests": quests_for_cache,
-                "skillLevel": context["skill_level"],
-                "language": context["language"],
-                "generatedAt": firestore.SERVER_TIMESTAMP,
-            })
-        except Exception as e:
-            print(f"Error saving personal_quests cache: {e}")
-            raise
-
-        # Update meta
-        meta_ref = db.collection("student_quest_meta").document(user_id)
-        try:
-            meta_ref.set({
-                "lastGeneratedDate": today,
-                "lastSkillLevel": context["skill_level"],
-                "difficultyScore": context["difficulty_score"],
-                "weakAreas": context.get("weak_areas", []),
-            }, merge=True)
-        except Exception as e:
-            print(f"Error saving student_quest_meta: {e}")
-            raise
 
         return {
             "quests": saved_quests,
