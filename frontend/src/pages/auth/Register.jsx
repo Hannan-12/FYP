@@ -8,12 +8,24 @@ import { UserPlus, Loader2, ArrowRight, CheckCircle2, XCircle } from "lucide-rea
 
 const EMAIL_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
 
+const COMMON_TLDS = new Set(["com","net","org","edu","gov","io","co","uk","de","fr","in","pk","au","ca","us","info","biz","me","app","dev","ai"]);
+
 const validateEmail = (email) => {
   const t = email.trim();
   if (!t) return false;
   if (t.includes("..")) return false;
-  const [local] = t.split("@");
+  const [local, domain] = t.split("@");
+  if (!domain) return false;
   if (local?.startsWith(".") || local?.endsWith(".")) return false;
+  // Block duplicate trailing TLD: gmail.com.com
+  const parts = domain.split(".");
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1].toLowerCase();
+    const secondLast = parts[parts.length - 2].toLowerCase();
+    if (last === secondLast) return false;
+    // Block if last two parts are both known TLDs (e.g. .com.net)
+    if (COMMON_TLDS.has(last) && COMMON_TLDS.has(secondLast) && parts.length > 2) return false;
+  }
   return EMAIL_REGEX.test(t);
 };
 
