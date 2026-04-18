@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom"; // Added navigate
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, onSnapshot, getDocs } from "firebase/firestore";
-import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon, Zap } from "lucide-react";
+import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon, Zap, Globe } from "lucide-react";
 import { motion } from "framer-motion";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 
 const StatCard = ({ title, value, icon: Icon, color, delay }) => (
   <motion.div 
@@ -32,6 +32,7 @@ const UserDashboard = () => {
   const [sessions, setSessions] = useState([]);
   const [stats, setStats] = useState({ total: 0, accuracy: 0, skill: "N/A" });
   const [chartData, setChartData] = useState([]);
+  const [langData, setLangData] = useState([]);
 
   useEffect(() => {
     if (!user) {
@@ -67,6 +68,27 @@ const UserDashboard = () => {
         ].filter(item => item.value > 0);
 
         setChartData(formattedData);
+
+        // Language distribution from all sessions
+        const langCounts = {};
+        data.forEach(s => {
+          const langs = s.languagesUsed?.length
+            ? s.languagesUsed
+            : s.language ? [s.language] : [];
+          langs.forEach(l => {
+            const key = l.toLowerCase();
+            langCounts[key] = (langCounts[key] || 0) + 1;
+          });
+        });
+        const total = Object.values(langCounts).reduce((a, b) => a + b, 0) || 1;
+        const sorted = Object.entries(langCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6)
+          .map(([lang, count]) => ({
+            lang: lang.charAt(0).toUpperCase() + lang.slice(1),
+            pct: Math.round((count / total) * 100),
+          }));
+        setLangData(sorted);
       }
     };
 
@@ -127,6 +149,7 @@ const UserDashboard = () => {
         <StatCard title="Total Sessions" value={stats.total} icon={Code} color="bg-blue-500" delay={0.1} />
         <StatCard title="Authenticity" value={`${stats.accuracy}%`} icon={CheckCircle} color="bg-green-500" delay={0.2} />
         <StatCard title="Current Level" value={stats.skill} icon={TrendingUp} color="bg-purple-500" delay={0.3} />
+        <StatCard title="Languages Used" value={langData.length || "—"} icon={Globe} color="bg-cyan-500" delay={0.35} />
         
         {/* Gamified Level Up Card */}
         <motion.div 
@@ -225,6 +248,55 @@ const UserDashboard = () => {
           )}
         </motion.div>
       </div>
+
+      {/* Language Activity */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.7 }}
+        className="bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl shadow-xl p-6"
+      >
+        <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-6">
+          <Globe size={20} className="text-cyan-400" />
+          Language Activity
+          {langData.length > 0 && (
+            <span className="ml-auto text-xs text-slate-500 font-normal">
+              {langData.length} language{langData.length !== 1 ? "s" : ""} detected
+            </span>
+          )}
+        </h2>
+        {langData.length > 0 ? (
+          <div className="space-y-3">
+            {langData.map(({ lang, pct }, i) => {
+              const colors = ["#06b6d4","#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444"];
+              return (
+                <div key={lang}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-slate-300 font-medium">{lang}</span>
+                    <span className="text-slate-500">{pct}%</span>
+                  </div>
+                  <div className="w-full bg-slate-700 rounded-full h-2">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${pct}%` }}
+                      transition={{ duration: 0.8, delay: 0.1 * i }}
+                      className="h-2 rounded-full"
+                      style={{ backgroundColor: colors[i % colors.length] }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="h-32 flex items-center justify-center">
+            <div className="text-center">
+              <Globe size={36} className="mx-auto text-slate-600 mb-2" />
+              <p className="text-slate-500 text-sm">Start coding sessions to see your language activity</p>
+            </div>
+          </div>
+        )}
+      </motion.div>
     </div>
   );
 };

@@ -2895,14 +2895,17 @@ Return ONLY the JSON array of 3 quest objects."""
 
 
 @app.get("/quests/daily/{user_id}")
-async def get_daily_quests(user_id: str):
-    """Return today's personalized quests for a user. Regenerates if date changed or skill level changed."""
+async def get_daily_quests(user_id: str, language: Optional[str] = None):
+    """Return today's personalized quests for a user. Regenerates if date changed or skill level changed.
+    Optional ?language= param forces quests for a specific language (used by language tabs in the UI)."""
     from datetime import date as date_type
     today = date_type.today().isoformat()
+    lang_override = _normalize_language(language) if language else None
+    cache_key = f"{user_id}_{today}" if not lang_override else f"{user_id}_{today}_{lang_override}"
 
     try:
         # Check for cached quests today
-        daily_ref = db.collection("personal_quests").document(f"{user_id}_{today}")
+        daily_ref = db.collection("personal_quests").document(cache_key)
         daily_snap = daily_ref.get()
 
         if daily_snap.exists:
@@ -2925,6 +2928,8 @@ async def get_daily_quests(user_id: str):
 
         # Generate new personalized quests
         context = await _get_user_context(user_id)
+        if lang_override:
+            context["language"] = lang_override
         quests = _generate_personalized_quests_ai(context)
 
         # Fallback to generic quests if AI fails
