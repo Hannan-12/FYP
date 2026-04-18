@@ -4,7 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:8000" : "https://hannan-12-devskill-backend.hf.space");
 import {
   ArrowLeft, ShieldCheck, ShieldAlert, Clock, Keyboard, Calendar,
   Code2, Brain, Lightbulb, TrendingUp, Activity, Target, Star
