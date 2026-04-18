@@ -2894,47 +2894,88 @@ Return ONLY the JSON array of 3 quest objects."""
         return []
 
 
+def _select_session_based_quests(lang: str, skill_level: str) -> list:
+    """Pick quests from hardcoded bank based on session skill level.
+    Returns 2 reinforcement (current level) + 1 stretch (next level).
+    Used when no Claude API key is configured."""
+    level_order = ["Beginner", "Intermediate", "Advanced"]
+    current_idx = level_order.index(skill_level) if skill_level in level_order else 0
+    stretch_level = level_order[min(current_idx + 1, 2)]
+
+    lang_quests = LANGUAGE_QUESTS.get(lang) or LANGUAGE_QUESTS.get("python", {})
+    current_pool = list(lang_quests.get(skill_level, []))
+    stretch_pool = list(lang_quests.get(stretch_level, []))
+
+    # Fall back to CHALLENGES (python) if no quests for lang
+    if not current_pool:
+        current_pool = list(CHALLENGES.get(skill_level, []))
+    if not stretch_pool:
+        stretch_pool = list(CHALLENGES.get(stretch_level, []))
+
+    selected = []
+    if current_pool:
+        picks = random.sample(current_pool, min(2, len(current_pool)))
+        for q in picks:
+            selected.append({**q, "questType": "reinforcement"})
+    if stretch_pool:
+        picks = random.sample(stretch_pool, min(1, len(stretch_pool)))
+        for q in picks:
+            selected.append({**q, "questType": "stretch"})
+    return selected
+
+
 @app.get("/quests/daily/{user_id}")
 async def get_daily_quests(user_id: str, language: Optional[str] = None):
-    """Return today's personalized quests for a user. Regenerates if date changed or skill level changed.
-    Optional ?language= param forces quests for a specific language (used by language tabs in the UI)."""
+    """Return personalized quests for a user based on their sessions.
+    - No Claude API: always fresh from hardcoded bank, skill level from sessions.
+    - With Claude API: AI-generated, cached once per day per language.
+    Optional ?language= param overrides the detected language."""
     from datetime import date as date_type
     today = date_type.today().isoformat()
     lang_override = _normalize_language(language) if language else None
-    cache_key = f"{user_id}_{today}" if not lang_override else f"{user_id}_{today}_{lang_override}"
 
     try:
-        # Check for cached quests today
+        # Get user context from sessions (skill level, behavioral data)
+        context = await _get_user_context(user_id)
+        if lang_override:
+            context["language"] = lang_override
+        lang = context["language"]
+        skill = context["skill_level"]
+
+        # --- No Claude API: serve fresh session-based quests from hardcoded bank ---
+        if not _anthropic_client:
+            quests = _select_session_based_quests(lang, skill)
+            if not quests:
+                raise HTTPException(status_code=404, detail=f"No quests available for {lang}/{skill}.")
+            return {
+                "quests": quests,
+                "date": today,
+                "cached": False,
+                "skillLevel": skill,
+                "language": lang,
+            }
+
+        # --- Claude API available: use daily cache + AI generation ---
+        cache_key = f"{user_id}_{today}" if not lang_override else f"{user_id}_{today}_{lang_override}"
         daily_ref = db.collection("personal_quests").document(cache_key)
         daily_snap = daily_ref.get()
 
         if daily_snap.exists:
             data = daily_snap.to_dict()
-            meta_ref = db.collection("student_quest_meta").document(user_id)
-            meta_snap = meta_ref.get()
-            current_skill = "Beginner"
-            if meta_snap.exists:
-                current_skill = meta_snap.to_dict().get("lastSkillLevel", "Beginner")
-
-            # Return cached if skill level hasn't changed
-            if data.get("skillLevel") == current_skill:
+            if data.get("skillLevel") == skill:
                 return {
                     "quests": data.get("quests", []),
                     "date": today,
                     "cached": True,
-                    "skillLevel": current_skill,
-                    "language": data.get("language", "python"),
+                    "skillLevel": skill,
+                    "language": data.get("language", lang),
                 }
 
-        # Generate new personalized quests
-        context = await _get_user_context(user_id)
-        if lang_override:
-            context["language"] = lang_override
         quests = _generate_personalized_quests_ai(context)
 
         # Fallback to generic quests if AI fails
         if not quests:
-            quests = await _get_or_generate_quests(context["language"], context["skill_level"], 3)
+            quests = await _get_or_generate_quests(lang, skill, 3)
             for q in quests:
                 q["questType"] = "reinforcement"
 
