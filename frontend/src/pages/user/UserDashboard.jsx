@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"; // Added navigate
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, onSnapshot, getDocs } from "firebase/firestore";
-import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon, Zap, Globe } from "lucide-react";
+import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon, Zap, Globe, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 

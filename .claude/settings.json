@@ -17,7 +17,10 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('train_codebert.py'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
       "Bash(python3 -c ' *)",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('backend/train_codebert.py'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
-      "Bash(python3 -c \"import json; c=json.load\\(open\\('/Users/muhammadhannanhafeez/FYP/DevSkill-FYP/backend/ai_models/best_codebert_large/config.json'\\)\\); print\\(c.get\\('id2label'\\), c.get\\('label2id'\\)\\)\")"
+      "Bash(python3 -c \"import json; c=json.load\\(open\\('/Users/muhammadhannanhafeez/FYP/DevSkill-FYP/backend/ai_models/best_codebert_large/config.json'\\)\\); print\\(c.get\\('id2label'\\), c.get\\('label2id'\\)\\)\")",
+      "Bash(npm list *)",
+      "Bash(npm install *)",
+      "Bash(vsce package *)"
     ]
   }
 }

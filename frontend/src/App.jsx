@@ -25,6 +25,7 @@ import Progress from "./pages/user/Progress";
 import Quests from "./pages/user/Quests";
 import MySessions from "./pages/user/MySessions";
 import UserSessionDetail from "./pages/user/UserSessionDetail";
+import LanguageStats from "./pages/user/LanguageStats";
 
 function App() {
   return (
@@ -51,6 +52,7 @@ function App() {
             <Route path="history" element={<MySessions />} />
             <Route path="session/:id" element={<UserSessionDetail />} />
             <Route path="profile" element={<UserProfile />} />
+            <Route path="languages" element={<LanguageStats />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
