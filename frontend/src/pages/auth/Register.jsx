@@ -24,7 +24,6 @@ const validateEmail = (email) => {
     const secondLast = parts[parts.length - 2].toLowerCase();
     if (last === secondLast) return false;
     // Block if last two parts are both known TLDs (e.g. .com.net)
-    if (COMMON_TLDS.has(last) && COMMON_TLDS.has(secondLast) && parts.length > 2) return false;
   }
   return EMAIL_REGEX.test(t);
 };
