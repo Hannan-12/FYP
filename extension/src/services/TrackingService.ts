@@ -45,8 +45,7 @@ export class TrackingService {
   // Behavioral signals for AI detection
   private behavioralSignals: BehavioralSignals = this.createEmptySignals();
   private lastKeystrokeTime = 0;
-  private pendingPasteFromClipboard = false;
-  private pendingFormatAction = false;
+private pendingFormatAction = false;
 
   constructor(
     private storage: StorageService,
@@ -206,19 +205,6 @@ export class TrackingService {
 
     // --- Command Hooks for AI Detection ---
 
-    // Intercept clipboard paste (Ctrl+V / Cmd+V)
-    const pasteCmd = vscode.commands.registerCommand('devskill-tracker.interceptPaste', async () => {
-      if (this.running) {
-        this.pendingPasteFromClipboard = true;
-        this.behavioralSignals.totalClipboardPastes++;
-        const clipText = await vscode.env.clipboard.readText();
-        this.behavioralSignals.totalPasteCharacters += clipText.length;
-        this.recordCommandEvent('clipboard', clipText.length);
-      }
-      // Execute the real paste
-      await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
-    });
-
     // Intercept undo
     const undoCmd = vscode.commands.registerCommand('devskill-tracker.interceptUndo', async () => {
       if (this.running) {
@@ -276,7 +262,7 @@ export class TrackingService {
       }
     );
 
-    this.disposables.push(textChange, editorChange, openDoc, closeDoc, windowState, pasteCmd, undoCmd, redoCmd, formatCmd, inlineSuggestCmd, inlineSuggestNextLineCmd);
+    this.disposables.push(textChange, editorChange, openDoc, closeDoc, windowState, undoCmd, redoCmd, formatCmd, inlineSuggestCmd, inlineSuggestNextLineCmd);
   }
 
   /**
@@ -346,13 +332,6 @@ export class TrackingService {
       this.lastKeystrokeTime = now;
     }
 
-    // Check if this text change was triggered by a clipboard paste command
-    const wasClipboardPaste = this.pendingPasteFromClipboard;
-    if (this.pendingPasteFromClipboard) {
-      this.pendingPasteFromClipboard = false;
-      // Already tracked in interceptPaste, skip normal paste detection
-    }
-
     // Check if this was from a format action
     if (this.pendingFormatAction) {
       this.pendingFormatAction = false;
@@ -376,13 +355,9 @@ export class TrackingService {
         this.session.totalPastes++;
       }
 
-      // Track large insertions in behavioral signals.
-      // Skip clipboard pastes here — they are already counted in interceptPaste.
-      // This captures AI tool edits (e.g., Claude Code, Copilot Chat applying code).
-      if (!wasClipboardPaste) {
-        this.behavioralSignals.totalClipboardPastes++;
-        this.behavioralSignals.totalPasteCharacters += totalAdded;
-      }
+      // Track all large insertions in behavioral signals (paste or AI tool edits).
+      this.behavioralSignals.totalClipboardPastes++;
+      this.behavioralSignals.totalPasteCharacters += totalAdded;
 
       // Record paste event
       const pasteDetail: PasteDetail = {
