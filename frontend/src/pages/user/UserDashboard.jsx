@@ -249,26 +249,27 @@ const UserDashboard = () => {
         </motion.div>
       </div>
 
-      {/* Language Activity */}
+      {/* Language Activity preview card */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.7 }}
-        className="bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl shadow-xl p-6"
+        onClick={() => navigate("/user/languages")}
+        className="cursor-pointer bg-slate-800/50 backdrop-blur-md border border-slate-700 hover:border-cyan-500/40 rounded-2xl shadow-xl p-6 transition-all group"
       >
-        <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-6">
-          <Globe size={20} className="text-cyan-400" />
-          Language Activity
-          {langData.length > 0 && (
-            <span className="ml-auto text-xs text-slate-500 font-normal">
-              {langData.length} language{langData.length !== 1 ? "s" : ""} detected
-            </span>
-          )}
-        </h2>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <Globe size={20} className="text-cyan-400" /> Language Activity
+          </h2>
+          <span className="flex items-center gap-1 text-xs text-cyan-400 opacity-0 group-hover:opacity-100 transition font-semibold">
+            View Details <ArrowRight size={14} />
+          </span>
+        </div>
+
         {langData.length > 0 ? (
           <div className="space-y-3">
-            {langData.map(({ lang, pct }, i) => {
-              const colors = ["#06b6d4","#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444"];
+            {langData.slice(0, 3).map(({ lang, pct }, i) => {
+              const colors = ["#06b6d4", "#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444"];
               return (
                 <div key={lang}>
                   <div className="flex justify-between text-sm mb-1">
@@ -287,12 +288,15 @@ const UserDashboard = () => {
                 </div>
               );
             })}
+            {langData.length > 3 && (
+              <p className="text-slate-500 text-xs text-right">+{langData.length - 3} more languages</p>
+            )}
           </div>
         ) : (
-          <div className="h-32 flex items-center justify-center">
+          <div className="h-24 flex items-center justify-center">
             <div className="text-center">
-              <Globe size={36} className="mx-auto text-slate-600 mb-2" />
-              <p className="text-slate-500 text-sm">Start coding sessions to see your language activity</p>
+              <Globe size={32} className="mx-auto text-slate-600 mb-2" />
+              <p className="text-slate-500 text-sm">Start coding to see language activity</p>
             </div>
           </div>
         )}
