@@ -6,7 +6,16 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { motion } from "framer-motion";
 import { UserPlus, Loader2, ArrowRight, CheckCircle2, XCircle } from "lucide-react";
 
-const EMAIL_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/;
+const EMAIL_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+
+const validateEmail = (email) => {
+  const t = email.trim();
+  if (!t) return false;
+  if (t.includes("..")) return false;
+  const [local] = t.split("@");
+  if (local?.startsWith(".") || local?.endsWith(".")) return false;
+  return EMAIL_REGEX.test(t);
+};
 
 const PwdCheck = ({ ok, label }) => (
   <div className={`flex items-center gap-1.5 text-xs ${ok ? "text-green-400" : "text-slate-500"}`}>
@@ -20,7 +29,12 @@ const Register = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [pwdFocused, setPwdFocused] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
   const navigate = useNavigate();
+
+  const emailValid = validateEmail(formData.email);
+  const showEmailError = emailTouched && !emailValid;
+  const showEmailOk = emailTouched && emailValid;
 
   const pwd = formData.password;
   const pwdChecks = {
@@ -42,7 +56,8 @@ const Register = () => {
     setError("");
 
     const trimmedEmail = formData.email.trim();
-    if (!EMAIL_REGEX.test(trimmedEmail) || trimmedEmail.includes("..")) {
+    setEmailTouched(true);
+    if (!validateEmail(trimmedEmail)) {
       return setError("Please enter a valid email address.");
     }
     if (formData.password !== formData.confirmPassword) return setError("Passwords do not match.");
@@ -127,14 +142,30 @@ const Register = () => {
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Email</label>
                 <input
-                  type="email"
+                  type="text"
                   name="email"
-                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 text-white outline-none transition-all"
+                  autoComplete="email"
+                  className={`w-full px-4 py-3 bg-slate-800 border rounded-lg focus:ring-2 text-white outline-none transition-all ${
+                    showEmailError ? "border-red-500 focus:ring-red-500/40" :
+                    showEmailOk   ? "border-green-500 focus:ring-green-500/40" :
+                    "border-slate-700 focus:ring-cyan-500"
+                  }`}
                   placeholder="student@example.com"
                   value={formData.email}
                   onChange={handleChange}
+                  onBlur={() => formData.email && setEmailTouched(true)}
                   required
                 />
+                {showEmailError && (
+                  <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                    <XCircle size={12} /> Invalid email address
+                  </p>
+                )}
+                {showEmailOk && (
+                  <p className="mt-1 text-xs text-green-400 flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Valid email
+                  </p>
+                )}
               </div>
 
               <div>
