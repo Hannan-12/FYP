@@ -26,9 +26,8 @@ Instructions:
 # ============================================================
 # CELL 2 — Imports & Config
 # ============================================================
-import os, json, re, random, ast, copy
+import os, json, re, random, ast
 import numpy as np
-import pandas as pd
 from collections import Counter
 
 import torch
@@ -69,7 +68,12 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    device = torch.device("mps")   # Apple Silicon GPU
+else:
+    device = torch.device("cpu")
 print(f"Device: {device}")
 login(token=HF_TOKEN, add_to_git_credential=False)
 
@@ -252,7 +256,8 @@ def rename_variables(code: str) -> str:
         return code
 
     # Collect all Name nodes that are local variables (not builtins/imports)
-    builtins = set(dir(__builtins__)) if isinstance(__builtins__, dict) else set(dir(__builtins__))
+    import builtins as _builtins_mod
+    builtins = set(dir(_builtins_mod))
     builtins |= {"self", "cls", "True", "False", "None"}
 
     names = set()
@@ -453,7 +458,8 @@ training_args = TrainingArguments(
     metric_for_best_model="macro_f1",
     greater_is_better=True,
     logging_steps=50,
-    fp16=torch.cuda.is_available(),
+    fp16=torch.cuda.is_available(),     # CUDA only
+    bf16=not torch.cuda.is_available() and torch.backends.mps.is_available(),  # MPS (Apple)
     seed=SEED,
     report_to="none",
     save_total_limit=2,
