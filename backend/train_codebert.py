@@ -447,6 +447,7 @@ eval_steps       = steps_per_epoch  # evaluate once per epoch
 
 training_args = TrainingArguments(
     output_dir="./codebert_checkpoints",
+    hub_model_id=HF_REPO,
     num_train_epochs=EPOCHS,
     per_device_train_batch_size=BATCH_SIZE,
     per_device_eval_batch_size=32,
@@ -462,8 +463,8 @@ training_args = TrainingArguments(
     metric_for_best_model="macro_f1",
     greater_is_better=True,
     logging_steps=50,
-    fp16=torch.cuda.is_available(),     # CUDA only
-    bf16=not torch.cuda.is_available() and torch.backends.mps.is_available(),  # MPS (Apple)
+    fp16=torch.cuda.is_available(),
+    bf16=not torch.cuda.is_available() and torch.backends.mps.is_available(),
     seed=SEED,
     report_to="none",
     save_total_limit=2,
@@ -539,7 +540,7 @@ tokenizer.save_pretrained(SAVE_DIR)
 print("Saved locally.")
 
 print(f"\n=== Pushing to HuggingFace Hub: {HF_REPO} ===")
-trainer.push_to_hub(repo_id=HF_REPO, commit_message="Fine-tuned CodeBERT skill classifier")
+model.push_to_hub(HF_REPO, commit_message="Fine-tuned CodeBERT skill classifier")
 tokenizer.push_to_hub(HF_REPO)
 print(f"Done. Model live at: https://huggingface.co/{HF_REPO}")
 
