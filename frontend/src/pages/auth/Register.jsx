@@ -6,24 +6,25 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { motion } from "framer-motion";
 import { UserPlus, Loader2, ArrowRight, CheckCircle2, XCircle } from "lucide-react";
 
-const EMAIL_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
-
-const COMMON_TLDS = new Set(["com","net","org","edu","gov","io","co","uk","de","fr","in","pk","au","ca","us","info","biz","me","app","dev","ai"]);
+// RFC 5322 simplified — handles local@domain, subdomains, country+institution TLDs like .edu.pk
+const EMAIL_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._%+\-]*[a-zA-Z0-9]@[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
 
 const validateEmail = (email) => {
   const t = email.trim();
   if (!t) return false;
-  if (t.includes("..")) return false;
-  const [local, domain] = t.split("@");
-  if (!domain) return false;
-  if (local?.startsWith(".") || local?.endsWith(".")) return false;
-  // Block duplicate trailing TLD: gmail.com.com
+  if (t.includes("..")) return false;                // consecutive dots invalid
+  const atIdx = t.lastIndexOf("@");
+  if (atIdx < 1) return false;                       // must have chars before @
+  const local = t.slice(0, atIdx);
+  const domain = t.slice(atIdx + 1);
+  if (!domain || domain.startsWith(".") || domain.endsWith(".")) return false;
+  if (local.startsWith(".") || local.endsWith(".")) return false;
+  // Catch gmail.com.com — last two domain segments identical
   const parts = domain.split(".");
   if (parts.length >= 2) {
     const last = parts[parts.length - 1].toLowerCase();
     const secondLast = parts[parts.length - 2].toLowerCase();
     if (last === secondLast) return false;
-    // Block if last two parts are both known TLDs (e.g. .com.net)
   }
   return EMAIL_REGEX.test(t);
 };
