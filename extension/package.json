@@ -53,11 +53,7 @@
         "command": "devskill-tracker.analyzeFile",
         "title": "DevSkill: Analyze Current File"
       },
-      {
-        "command": "devskill-tracker.interceptPaste",
-        "title": "DevSkill: Paste (intercepted)"
-      },
-      {
+{
         "command": "devskill-tracker.interceptUndo",
         "title": "DevSkill: Undo (intercepted)"
       },
@@ -79,13 +75,7 @@
       }
     ],
     "keybindings": [
-      {
-        "command": "devskill-tracker.interceptPaste",
-        "key": "ctrl+v",
-        "mac": "cmd+v",
-        "when": "editorTextFocus"
-      },
-      {
+{
         "command": "devskill-tracker.interceptUndo",
         "key": "ctrl+z",
         "mac": "cmd+z",
