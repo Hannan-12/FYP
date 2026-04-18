@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Book, Plus, Pencil, Trash2, Save, X, RefreshCw, Search, Upload, ChevronDown } from "lucide-react";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:8000" : "https://hannan-12-devskill-backend.hf.space");
 
 const LANGUAGES = [
   { id: "python", name: "Python" },

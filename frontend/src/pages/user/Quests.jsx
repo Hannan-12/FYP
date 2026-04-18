@@ -7,7 +7,7 @@ import Editor from "@monaco-editor/react";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, setDoc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:8000" : "https://hannan-12-devskill-backend.hf.space");
 
 // Monaco editor language IDs for detected languages
 const MONACO_MAP = {
