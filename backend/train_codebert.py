@@ -20,8 +20,12 @@ Instructions:
 # ============================================================
 # CELL 1 — Install dependencies
 # ============================================================
-# !pip install -q transformers datasets accelerate scikit-learn \
-#              matplotlib seaborn huggingface_hub
+import subprocess, sys
+subprocess.run([
+    sys.executable, "-m", "pip", "install", "-q",
+    "transformers", "datasets", "accelerate",
+    "scikit-learn", "matplotlib", "seaborn", "huggingface_hub"
+], check=True)
 
 # ============================================================
 # CELL 2 — Imports & Config
@@ -535,8 +539,8 @@ tokenizer.save_pretrained(SAVE_DIR)
 print("Saved locally.")
 
 print(f"\n=== Pushing to HuggingFace Hub: {HF_REPO} ===")
-model.push_to_hub(HF_REPO, token=HF_TOKEN)
-tokenizer.push_to_hub(HF_REPO, token=HF_TOKEN)
+trainer.push_to_hub(repo_id=HF_REPO, commit_message="Fine-tuned CodeBERT skill classifier")
+tokenizer.push_to_hub(HF_REPO)
 print(f"Done. Model live at: https://huggingface.co/{HF_REPO}")
 
 print("\n=== All done! ===")
