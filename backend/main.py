@@ -2241,6 +2241,89 @@ async def session_update(session_id: str, req: SessionUpdateRequest):
         print(f"Session update error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+def fuse_skill_with_behavior(
+    codebert_probs: list,          # [adv_prob, beg_prob, mid_prob] from model
+    req: "SessionEndRequest",
+) -> tuple[str, float]:
+    """
+    Combine CodeBERT class probabilities with behavioral signals to produce
+    a final skill label and confidence.
+
+    CodeBERT weight: 60%  (what was written)
+    Behavioral weight: 40% (how it was written)
+
+    Behavioral score (0–1) maps to a soft label distribution:
+      score < 0.35  → lean Beginner
+      score 0.35-0.65 → lean Intermediate
+      score > 0.65  → lean Advanced
+    """
+    adv_p, beg_p, mid_p = codebert_probs  # already sum to 1.0
+
+    # --- Build behavioral score ---
+    total_ks = max(req.totalKeystrokes, 1)
+    total_dur = max(req.totalDuration, 1)
+    active_dur = max(req.activeDuration, 1)
+    bs = req.behavioralSignals
+
+    paste_ratio   = min(req.totalPastes / total_ks, 1.0)          # lower = better
+    idle_ratio    = min(req.idleDuration / total_dur, 1.0)         # lower = better
+    ks_rate       = min(req.totalKeystrokes / (active_dur / 60), 400) / 400  # higher = better (cap 400 kpm)
+    file_breadth  = min(len(req.filesEdited or []) / 5, 1.0)       # higher = better
+    lang_breadth  = min(len(req.languagesUsed or []) / 3, 1.0)     # higher = better
+
+    copilot_ratio = 0.0
+    undo_ratio    = 0.0
+    burst_score   = 0.5
+    deletion_ratio = 0.0
+
+    if bs:
+        copilot_accepts = bs.totalCopilotAccepts + bs.totalAutocompleteAccepts
+        copilot_ratio   = min(copilot_accepts / total_ks, 1.0)     # lower = better
+        undo_ratio      = min(bs.totalUndos / total_ks, 1.0)       # lower = better (fewer mistakes)
+        burst_score     = min(bs.burstCount / 20, 1.0)             # higher = more confident typing
+        deletion_ratio  = min(bs.deletionCharacters / max(total_ks * 5, 1), 1.0)  # lower = better
+
+    behavioral_score = (
+        (1 - paste_ratio)   * 0.20 +
+        (1 - idle_ratio)    * 0.15 +
+        ks_rate             * 0.15 +
+        file_breadth        * 0.10 +
+        lang_breadth        * 0.05 +
+        (1 - copilot_ratio) * 0.15 +
+        (1 - undo_ratio)    * 0.10 +
+        burst_score         * 0.05 +
+        (1 - deletion_ratio)* 0.05
+    )
+    behavioral_score = max(0.0, min(1.0, behavioral_score))
+
+    # Convert behavioral score to a soft label distribution
+    if behavioral_score < 0.35:
+        b_beg, b_mid, b_adv = 0.70, 0.25, 0.05
+    elif behavioral_score < 0.65:
+        b_beg, b_mid, b_adv = 0.15, 0.65, 0.20
+    else:
+        b_beg, b_mid, b_adv = 0.05, 0.30, 0.65
+
+    # Weighted fusion (CodeBERT 60%, behavioral 40%)
+    W_CB, W_BH = 0.60, 0.40
+    f_adv = W_CB * adv_p + W_BH * b_adv
+    f_beg = W_CB * beg_p + W_BH * b_beg
+    f_mid = W_CB * mid_p + W_BH * b_mid
+
+    label_map = {0: "Advanced", 1: "Beginner", 2: "Intermediate"}
+    fused = [f_adv, f_beg, f_mid]
+    best_idx = int(max(range(3), key=lambda i: fused[i]))
+    confidence = fused[best_idx] / sum(fused) * 100
+
+    print(f"[SkillFusion] behavioral_score={behavioral_score:.2f} "
+          f"cb=[Adv:{adv_p:.2f} Beg:{beg_p:.2f} Mid:{mid_p:.2f}] "
+          f"bh=[Adv:{b_adv:.2f} Beg:{b_beg:.2f} Mid:{b_mid:.2f}] "
+          f"→ {label_map[best_idx]} ({confidence:.1f}%)")
+
+    return label_map[best_idx], confidence
+
+
 @app.post("/session/{session_id}/end")
 async def session_end(session_id: str, req: SessionEndRequest):
     """End a session. Call when user stops tracking or exits VS Code."""
@@ -2253,17 +2336,15 @@ async def session_end(session_id: str, req: SessionEndRequest):
         num_languages = len(req.languagesUsed) if req.languagesUsed else 0
         num_files = len(req.filesEdited) if req.filesEdited else 0
 
-        # Use CodeBERT model on snapshot code if provided, else fall back to heuristic
+        # Classify skill: CodeBERT fused with behavioral signals
         skill_level = "Beginner"
         confidence = 0.0
         if req.snapshotCode and ai_model:
             try:
-                skill_level = ai_model.predict([req.snapshotCode])[0]
-                probs = ai_model.predict_proba([req.snapshotCode])[0]
-                confidence = float(max(probs) * 100)
+                probs = ai_model.predict_proba([req.snapshotCode])[0]  # [adv, beg, mid]
+                skill_level, confidence = fuse_skill_with_behavior(probs, req)
             except Exception as model_err:
                 print(f"CodeBERT error on snapshot: {model_err}")
-                # Fall back to heuristic
                 advanced_langs = {"typescript", "rust", "go", "kotlin", "scala", "swift"}
                 intermediate_langs = {"javascript", "java", "csharp", "c#", "python", "ruby", "php"}
                 used_lower = [l.lower() for l in (req.languagesUsed or [])]
