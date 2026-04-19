@@ -20,7 +20,10 @@
       "Bash(python3 -c \"import json; c=json.load\\(open\\('/Users/muhammadhannanhafeez/FYP/DevSkill-FYP/backend/ai_models/best_codebert_large/config.json'\\)\\); print\\(c.get\\('id2label'\\), c.get\\('label2id'\\)\\)\")",
       "Bash(npm list *)",
       "Bash(npm install *)",
-      "Bash(vsce package *)"
+      "Bash(vsce package *)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
+      "Bash(bash /Users/muhammadhannanhafeez/FYP/DevSkill-FYP/scripts/deploy-backend.sh)",
+      "Bash(git restore *)"
     ]
   }
 }
