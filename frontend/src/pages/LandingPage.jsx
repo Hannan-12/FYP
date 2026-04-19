@@ -268,7 +268,6 @@ const Features = () => (
         {features.map((f, i) => (
           <motion.div key={f.title} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }} custom={i * 0.15}
             className={`group relative bg-[#0d1117] border border-white/5 hover:border-white/10 rounded-2xl p-6 transition-all duration-300 shadow-xl ${glowColors[f.glow]} hover:shadow-2xl hover:-translate-y-1`}>
-            {/* Top gradient line */}
             <div className={`absolute top-0 left-6 right-6 h-px bg-gradient-to-r ${f.grad} opacity-0 group-hover:opacity-100 transition-opacity rounded-full`} />
             <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${f.grad} mb-5 shadow-lg`}>
               <f.icon size={20} className="text-white" />
@@ -278,6 +277,11 @@ const Features = () => (
           </motion.div>
         ))}
       </div>
+      <motion.div variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mt-14">
+        <Link to="/register" className="group inline-flex items-center gap-2 text-indigo-400 hover:text-indigo-300 font-semibold text-sm transition-colors">
+          Get all features free <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
+        </Link>
+      </motion.div>
     </div>
   </section>
 );
@@ -300,6 +304,9 @@ const SessionPreview = () => (
             </div>
           ))}
         </div>
+        <Link to="/register" className="group mt-8 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm px-6 py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/20">
+          Start tracking your sessions <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
+        </Link>
       </motion.div>
 
       {/* Mock session card */}
@@ -407,6 +414,11 @@ const HowItWorks = () => (
           </motion.div>
         ))}
       </div>
+      <motion.div variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mt-16">
+        <Link to="/register" className="group inline-flex items-center gap-2 border border-indigo-500/30 hover:border-indigo-500/60 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-400 hover:text-indigo-300 font-semibold text-sm px-6 py-3 rounded-xl transition-all">
+          Create a free account and get your first report <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
+        </Link>
+      </motion.div>
     </div>
   </section>
 );
@@ -473,6 +485,12 @@ const FAQ = () => {
             </motion.div>
           ))}
         </div>
+        <motion.div variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mt-12">
+          <p className="text-slate-500 text-sm mb-4">Still unsure? It's free — no commitment needed.</p>
+          <Link to="/register" className="group inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm px-6 py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/20">
+            Try DevSkill free <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
+          </Link>
+        </motion.div>
       </div>
     </section>
   );
