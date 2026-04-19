@@ -4,7 +4,7 @@ import { motion, useScroll, useTransform } from "framer-motion";
 import {
   Code2, Brain, Shield, Target, Github, Activity,
   TrendingUp, Zap, CheckCircle, ArrowRight, Terminal,
-  BarChart3, BookOpen, ChevronRight, Sparkles, Star,
+  BarChart3, BookOpen, ChevronRight, Sparkles, Star, Download,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -37,6 +37,7 @@ const Navbar = () => {
           <span className="hidden sm:block text-xs bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-medium">FYP</span>
         </div>
         <div className="flex items-center gap-2">
+          <a href="#extension" className="hidden md:block text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Get Extension</a>
           <Link to="/login" className="text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Sign In</Link>
           <Link to="/register" className="relative group bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/25 flex items-center gap-1.5">
             Get Started <ChevronRight size={14} />
@@ -367,13 +368,13 @@ const SessionPreview = () => (
 
 // ─── How it Works ─────────────────────────────────────────────────────────────
 const steps = [
-  { icon: Terminal, num: "01", title: "Install the Extension", desc: "Install DevSkill Tracker from VS Code marketplace, sign in with your account. Tracking starts automatically." },
+  { icon: Terminal, num: "01", title: "Install the Extension", desc: "Download DevSkill Tracker (.vsix) from GitHub Releases, install it in VS Code, sign in with your account. Tracking starts automatically.", action: { label: "Download Extension", href: "https://github.com/Hannan-12/FYP/releases" } },
   { icon: Code2, num: "02", title: "Code Normally", desc: "Work on any project in any language. The extension runs silently — no interruption to your workflow whatsoever." },
   { icon: BookOpen, num: "03", title: "Review & Improve", desc: "Open the dashboard after any session to see your skill level, AI score, history, and a personalized quest to grow faster." },
 ];
 
 const HowItWorks = () => (
-  <section className="py-28 px-6">
+  <section id="extension" className="py-28 px-6">
     <div className="max-w-5xl mx-auto">
       <motion.div variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mb-20">
         <p className="text-indigo-400 font-semibold text-xs uppercase tracking-[0.2em] mb-4">How it works</p>
@@ -396,6 +397,12 @@ const HowItWorks = () => (
               </div>
               <h3 className="text-white font-bold text-lg mb-3">{s.title}</h3>
               <p className="text-slate-500 text-sm leading-relaxed">{s.desc}</p>
+              {s.action && (
+                <a href={s.action.href} target="_blank" rel="noopener noreferrer"
+                  className="mt-5 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-5 py-2.5 rounded-xl font-semibold transition-all shadow-lg shadow-indigo-500/25">
+                  <Download size={13} /> {s.action.label}
+                </a>
+              )}
             </div>
           </motion.div>
         ))}
@@ -469,7 +476,6 @@ const Footer = () => (
           <Code2 size={13} className="text-white" />
         </div>
         <span className="text-white font-bold text-sm">DevSkill</span>
-        <span className="text-slate-600 text-xs">— Final Year Project by Muhammad Hannan Hafeez</span>
       </div>
       <div className="flex items-center gap-6 text-slate-600 text-sm">
         <Link to="/login" className="hover:text-slate-300 transition-colors">Sign In</Link>
