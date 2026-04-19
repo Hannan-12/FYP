@@ -59,7 +59,7 @@ const UserLayout = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#0f172a] text-slate-100 overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#0f172a] text-slate-100 overflow-hidden font-sans min-w-[960px]">
       {/* SIDEBAR: 
          - Default width: w-20 
          - Hover width: w-64 
