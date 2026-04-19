@@ -454,7 +454,7 @@ const faqs = [
 const FAQ = () => {
   const [open, setOpen] = useState(null);
   return (
-    <section className="py-24 px-6 border-y border-white/5">
+    <section className="pt-24 pb-8 px-6 border-t border-white/5">
       <div className="max-w-3xl mx-auto">
         <motion.div variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mb-14">
           <p className="text-indigo-400 font-semibold text-xs uppercase tracking-[0.2em] mb-4">FAQ</p>
@@ -485,12 +485,6 @@ const FAQ = () => {
             </motion.div>
           ))}
         </div>
-        <motion.div variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mt-12">
-          <p className="text-slate-500 text-sm mb-4">Still unsure? It's free — no commitment needed.</p>
-          <Link to="/register" className="group inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm px-6 py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/20">
-            Try DevSkill free <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
-          </Link>
-        </motion.div>
       </div>
     </section>
   );
@@ -498,7 +492,7 @@ const FAQ = () => {
 
 // ─── CTA ─────────────────────────────────────────────────────────────────────
 const CTA = () => (
-  <section className="py-28 px-6">
+  <section className="pt-8 pb-28 px-6">
     <motion.div variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }}
       className="max-w-4xl mx-auto relative rounded-3xl overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-purple-700 to-pink-700" />
