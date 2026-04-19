@@ -34,7 +34,6 @@ const Navbar = () => {
             <Code2 size={16} className="text-white" />
           </div>
           <span className="text-white font-bold text-lg tracking-tight">DevSkill</span>
-          <span className="hidden sm:block text-xs bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-medium">FYP</span>
         </div>
         <div className="flex items-center gap-2">
           <a href="#extension" className="hidden md:block text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Get Extension</a>
