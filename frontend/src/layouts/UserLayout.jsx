@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, History, User, LogOut, Trophy, Target, Globe } from "lucide-react";
+import { LayoutDashboard, History, User, LogOut, Trophy, Target, Globe, Menu, X } from "lucide-react";
 import { motion } from "framer-motion";
 
 const UserLayout = () => {
@@ -11,6 +11,7 @@ const UserLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [profile, setProfile] = useState(null);
+  const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -37,7 +38,7 @@ const UserLayout = () => {
   const NavItem = ({ to, icon: Icon, label }) => {
     const active = location.pathname === to;
     return (
-      <Link to={to} className="relative flex items-center p-3 my-2 rounded-xl group/item overflow-hidden">
+      <Link to={to} className="relative flex items-center p-3 my-2 rounded-xl overflow-hidden">
         {active && (
           <motion.div
             layoutId="activeTab"
@@ -46,11 +47,9 @@ const UserLayout = () => {
             transition={{ type: "spring", stiffness: 500, damping: 30 }}
           />
         )}
-        <div className={`flex items-center transition-colors z-10 ${active ? 'text-white' : 'text-indigo-200 group-hover/item:text-white'}`}>
-          {/* Icon stays fixed size */}
+        <div className={`flex items-center transition-colors z-10 ${active ? 'text-white' : 'text-indigo-200 hover:text-white'}`}>
           <Icon size={24} className="min-w-[24px]" />
-          {/* Label animates opacity and position */}
-          <span className="ml-4 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-[-10px] group-hover:translate-x-0">
+          <span className={`ml-4 font-medium whitespace-nowrap transition-all duration-300 ${isOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 pointer-events-none"}`}>
             {label}
           </span>
         </div>
@@ -60,26 +59,30 @@ const UserLayout = () => {
 
   return (
     <div className="flex h-screen bg-[#0f172a] text-slate-100 overflow-hidden font-sans min-w-[960px]">
-      {/* SIDEBAR: 
-         - Default width: w-20 
-         - Hover width: w-64 
-         - Transition applied to width
-      */}
-      <aside className="h-screen bg-slate-900 border-r border-slate-800 flex flex-col relative z-20 transition-all duration-300 ease-in-out w-20 hover:w-64 group">
-        
-        {/* Header / Logo Area */}
-        <div className="p-6 flex items-center overflow-hidden">
-          <div className="w-8 h-8 min-w-[32px] bg-indigo-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30">
-            <span className="font-bold text-white text-lg">D</span>
+      <aside className={`h-screen bg-slate-900 border-r border-slate-800 flex flex-col relative z-20 transition-all duration-300 ease-in-out ${isOpen ? "w-64" : "w-20"}`}>
+
+        {/* Header / Logo + Toggle */}
+        <div className="p-4 flex items-center justify-between overflow-hidden">
+          <div className={`flex items-center overflow-hidden transition-all duration-300 ${isOpen ? "opacity-100" : "opacity-0 w-0"}`}>
+            <div className="w-8 h-8 min-w-[32px] bg-indigo-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30">
+              <span className="font-bold text-white text-lg">D</span>
+            </div>
+            <h2 className="text-xl font-bold tracking-tight text-white ml-3 whitespace-nowrap">
+              DevSkill
+            </h2>
           </div>
-          <h2 className="text-xl font-bold tracking-tight text-white ml-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
-            DevSkill
-          </h2>
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            aria-label={isOpen ? "Close sidebar" : "Open sidebar"}
+            className="p-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors shrink-0"
+          >
+            {isOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
-        
-        {/* Profile Summary - Only visible on hover */}
+
+        {/* Profile Summary - Only visible when open */}
         <div className="px-4 mb-4">
-          <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 backdrop-blur-sm overflow-hidden transition-all duration-300 h-0 opacity-0 group-hover:h-auto group-hover:opacity-100 group-hover:p-4">
+          <div className={`bg-slate-800/50 rounded-2xl border border-slate-700/50 backdrop-blur-sm overflow-hidden transition-all duration-300 ${isOpen ? "h-auto opacity-100 p-4" : "h-0 opacity-0"}`}>
             <p className="text-xs text-slate-400 uppercase tracking-wider mb-1 whitespace-nowrap">
               {profile?.role || "Student"}
             </p>
@@ -88,7 +91,7 @@ const UserLayout = () => {
             </p>
           </div>
         </div>
-        
+
         {/* Navigation */}
         <nav className="flex-1 px-3">
           <NavItem to="/user/dashboard" icon={LayoutDashboard} label="Overview" />
@@ -101,12 +104,12 @@ const UserLayout = () => {
 
         {/* Logout Button */}
         <div className="p-3 border-t border-slate-800">
-          <button 
+          <button
             onClick={handleLogout}
             className="flex items-center p-3 w-full rounded-xl text-red-400 hover:bg-red-500/10 transition duration-200 overflow-hidden"
           >
             <LogOut size={24} className="min-w-[24px]" />
-            <span className="ml-4 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <span className={`ml-4 whitespace-nowrap transition-all duration-300 ${isOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 pointer-events-none"}`}>
               Sign Out
             </span>
           </button>

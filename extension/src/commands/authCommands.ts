@@ -15,7 +15,7 @@ export function registerAuthCommands(
     'devskill-tracker.signIn',
     async () => {
       try {
-        // Check if already signed in
+           // Check if already signed in
         if (authService.isAuthenticated()) {
           const user = authService.getCurrentUser();
           const choice = await vscode.window.showInformationMessage(
