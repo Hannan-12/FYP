@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../../firebase/config";
-import { collection, onSnapshot, query, orderBy, limit, getDocs } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, getDocs } from "firebase/firestore";
 import { Users, Code, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -40,7 +40,7 @@ const AdminDashboard = () => {
       setLoading(false);
     };
 
-    const q = query(collection(db, "sessions"), orderBy("timestamp", "desc"), limit(20));
+    const q = query(collection(db, "sessions"), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -57,7 +57,7 @@ const AdminDashboard = () => {
             const timeB = b.timestamp?.seconds || b.startTime?.seconds || 0;
             return timeB - timeA;
           });
-          processData(sessionData.slice(0, 20));
+          processData(sessionData);
         } catch (fallbackError) {
           console.error("Admin dashboard fallback failed:", fallbackError);
           setLoading(false);
@@ -88,7 +88,7 @@ const AdminDashboard = () => {
         className="bg-slate-800/40 backdrop-blur-md border border-slate-700 rounded-2xl overflow-hidden shadow-xl"
       >
         <div className="p-6 border-b border-slate-700">
-          <h2 className="text-lg font-bold text-white">Recent Coding Sessions</h2>
+          <h2 className="text-lg font-bold text-white">All Coding Sessions</h2>
         </div>
         
         {loading ? (
