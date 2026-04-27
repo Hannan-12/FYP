@@ -138,24 +138,85 @@ export class AuthService implements vscode.Disposable {
   }
 
   /**
-   * Sign in with Google OAuth (using provider redirect)
+   * Sign in with Google using Firebase's signInWithIdToken via a custom token flow.
+   * Opens the DevSkill web app's /auth/google-extension page, which performs the
+   * Google popup, then passes the Firebase ID token back via a vscode:// URI.
    */
   async signInWithGoogle(): Promise<void> {
-    try {
-      Logger.info('Attempting Google OAuth sign in');
+    Logger.info('Attempting Google OAuth sign in via browser');
 
-      vscode.window.showInformationMessage(
-        'Google Sign-In will be available in a future update. Please use email/password for now.'
+    const apiKey = this.configService.getAuth().firebaseApiKey;
+    if (!apiKey) {
+      throw new Error('Firebase API key not configured.');
+    }
+
+    try {
+      const callbackUri = await vscode.env.asExternalUri(
+        vscode.Uri.parse(`${vscode.env.uriScheme}://devskill-tracker/google-auth`)
       );
 
-      // TODO: Implement Google OAuth flow
-      // This requires opening a browser, handling OAuth redirect, and exchanging code for token
-      // Will implement in future iteration with proper OAuth handler
+      const authUrl = `https://devskill-fyp.firebaseapp.com/__/auth/handler?` +
+        `redirect_uri=${encodeURIComponent(callbackUri.toString())}`;
 
+      // Store a promise that resolves when the URI handler fires
+      const tokenPromise = new Promise<string>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          disposable.dispose();
+          reject(new Error('Google sign-in timed out. Please try again.'));
+        }, 120000); // 2 minute timeout
+
+        const disposable = vscode.window.registerUriHandler({
+          handleUri: async (uri: vscode.Uri) => {
+            clearTimeout(timeout);
+            disposable.dispose();
+            const params = new URLSearchParams(uri.query);
+            const idToken = params.get('idToken');
+            if (idToken) {
+              resolve(idToken);
+            } else {
+              reject(new Error('No ID token received from Google sign-in.'));
+            }
+          }
+        });
+      });
+
+      await vscode.env.openExternal(vscode.Uri.parse(authUrl));
+      vscode.window.showInformationMessage('Complete Google sign-in in your browser...');
+
+      const idToken = await tokenPromise;
+      await this.exchangeGoogleIdToken(idToken, apiKey);
+
+      Logger.info('Google sign in successful');
     } catch (error) {
       Logger.error('Google sign in failed', error);
       throw error;
     }
+  }
+
+  /**
+   * Exchange a Google ID token for Firebase credentials
+   */
+  private async exchangeGoogleIdToken(idToken: string, apiKey: string): Promise<void> {
+    const url = `${AuthService.FIREBASE_API_BASE}/accounts:signInWithIdp?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        postBody: `id_token=${idToken}&providerId=google.com`,
+        requestUri: 'http://localhost',
+        returnSecureToken: true,
+        returnIdpCredential: true
+      })
+    });
+
+    if (!response.ok) {
+      const error: any = await response.json();
+      throw new Error(error.error?.message || 'Google sign-in exchange failed');
+    }
+
+    const data: any = await response.json();
+    await this.handleSuccessfulAuth(data);
+    vscode.window.showInformationMessage(`Signed in as ${data.email}`);
   }
 
   /**
