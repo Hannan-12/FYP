@@ -176,12 +176,18 @@ const SessionDetail = () => {
             <h2 className="text-base font-bold text-white">Behavioral Signals</h2>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            {Object.entries(session.behavioralSignals).map(([key, val]) => (
-              <div key={key} className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-4 text-center">
-                <p className="text-2xl font-bold text-white">{typeof val === "number" ? val : typeof val === "boolean" ? (val ? "Yes" : "No") : String(val)}</p>
-                <p className="text-xs text-slate-500 mt-1 capitalize">{key.replace(/_/g, " ")}</p>
-              </div>
-            ))}
+            {Object.entries(session.behavioralSignals)
+              .filter(([, val]) => !Array.isArray(val))
+              .map(([key, val]) => {
+                const display = typeof val === "boolean" ? (val ? "Yes" : "No") : typeof val === "number" ? val.toLocaleString() : String(val);
+                const label = key.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim();
+                return (
+                  <div key={key} className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-4 text-center">
+                    <p className="text-2xl font-bold text-white">{display}</p>
+                    <p className="text-xs text-slate-500 mt-1">{label}</p>
+                  </div>
+                );
+              })}
           </div>
         </motion.div>
       )}
