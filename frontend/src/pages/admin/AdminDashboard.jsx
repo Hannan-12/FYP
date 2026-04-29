@@ -83,7 +83,13 @@ const AdminDashboard = () => {
     const totalSessions = sessions.length;
     const completed = sessions.filter(s => s.status === "completed");
     const avgDuration = completed.length
-      ? Math.round(completed.reduce((acc, s) => acc + (s.activeDuration || s.totalDuration / 1000 || 0), 0) / completed.length)
+      ? Math.round(completed.reduce((acc, s) => {
+          const d = s.activeDuration ||
+            (s.totalDuration ? s.totalDuration / 1000 : 0) ||
+            s.stats?.duration ||
+            (s.endTime?.seconds && s.startTime?.seconds ? s.endTime.seconds - s.startTime.seconds : 0);
+          return acc + d;
+        }, 0) / completed.length)
       : 0;
     const aiAlerts = sessions.filter(s => (s.stats?.aiProbability || 0) > 70).length;
     return { totalStudents, totalSessions, avgDuration, aiAlerts };
@@ -219,7 +225,13 @@ const AdminDashboard = () => {
               <tbody className="divide-y divide-slate-700/50">
                 {filtered.map((session) => {
                   const isActive = session.status === "active";
-                  const duration = session.activeDuration || (session.totalDuration ? session.totalDuration / 1000 : 0);
+                  const duration =
+                    session.activeDuration ||
+                    (session.totalDuration ? session.totalDuration / 1000 : 0) ||
+                    session.stats?.duration ||
+                    (session.endTime?.seconds && session.startTime?.seconds
+                      ? session.endTime.seconds - session.startTime.seconds
+                      : 0);
                   return (
                     <tr
                       key={session.id}

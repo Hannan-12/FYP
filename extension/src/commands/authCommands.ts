@@ -7,10 +7,8 @@ export function registerAuthCommands(
   context: vscode.ExtensionContext,
   authService: AuthService
 ): void {
-  // Create webview provider
   const authWebviewProvider = new AuthWebviewProvider(context, authService);
 
-  // Sign In command
   const signInCmd = vscode.commands.registerCommand(
     'devskill-tracker.signIn',
     async () => {
