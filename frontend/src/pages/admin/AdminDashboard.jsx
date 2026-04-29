@@ -225,12 +225,19 @@ const AdminDashboard = () => {
               <tbody className="divide-y divide-slate-700/50">
                 {filtered.map((session) => {
                   const isActive = session.status === "active";
+                  const language =
+                    session.language ||
+                    session.languagesUsed?.[0] ||
+                    session.stats?.language ||
+                    null;
                   const duration =
                     session.activeDuration ||
                     (session.totalDuration ? session.totalDuration / 1000 : 0) ||
                     session.stats?.duration ||
                     (session.endTime?.seconds && session.startTime?.seconds
                       ? session.endTime.seconds - session.startTime.seconds
+                      : isActive
+                      ? Math.floor((Date.now() / 1000) - session.startTime?.seconds)
                       : 0);
                   return (
                     <tr
@@ -268,7 +275,7 @@ const AdminDashboard = () => {
                           {session.stats?.skillLevel || "N/A"}
                         </span>
                       </td>
-                      <td className="p-4 text-slate-400 capitalize">{session.language || "—"}</td>
+                      <td className="p-4 text-slate-400 capitalize">{language || "—"}</td>
                       <td className="p-4 text-slate-400 tabular-nums">{formatDuration(duration)}</td>
                       <td className="p-4 text-slate-500 text-sm tabular-nums whitespace-nowrap">{formatDate(session)}</td>
                       <td className="p-4 text-right pr-6">
