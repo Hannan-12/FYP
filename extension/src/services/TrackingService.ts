@@ -211,7 +211,7 @@ private pendingFormatAction = false;
         this.behavioralSignals.totalUndos++;
         this.recordCommandEvent('undo');
       }
-      await vscode.commands.executeCommand('default:undo');
+      await vscode.commands.executeCommand('undo');
     });
 
     // Intercept redo
@@ -220,7 +220,7 @@ private pendingFormatAction = false;
         this.behavioralSignals.totalRedos++;
         this.recordCommandEvent('redo');
       }
-      await vscode.commands.executeCommand('default:redo');
+      await vscode.commands.executeCommand('redo');
     });
 
     // Intercept format document

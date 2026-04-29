@@ -3,7 +3,7 @@
   "displayName": "DevSkill Tracker",
   "publisher": "Hannan-12",
   "description": "Tracks real-time coding activity for DevSkill Tracker",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "repository": {
     "type": "git",
     "url": "https://github.com/Hannan-12/FYP"
@@ -53,7 +53,7 @@
         "command": "devskill-tracker.analyzeFile",
         "title": "DevSkill: Analyze Current File"
       },
-{
+      {
         "command": "devskill-tracker.interceptUndo",
         "title": "DevSkill: Undo (intercepted)"
       },
@@ -75,17 +75,17 @@
       }
     ],
     "keybindings": [
-{
+      {
         "command": "devskill-tracker.interceptUndo",
         "key": "ctrl+z",
         "mac": "cmd+z",
-        "when": "editorTextFocus"
+        "when": "editorTextFocus && editorHasUndoRedo"
       },
       {
         "command": "devskill-tracker.interceptRedo",
         "key": "ctrl+y",
         "mac": "cmd+shift+z",
-        "when": "editorTextFocus"
+        "when": "editorTextFocus && editorHasUndoRedo"
       },
       {
         "command": "devskill-tracker.interceptFormat",
