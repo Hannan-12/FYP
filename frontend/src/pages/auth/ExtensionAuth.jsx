@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { signInWithPopup } from "firebase/auth";
-import { auth, googleProvider } from "../../firebase/config";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db, googleProvider } from "../../firebase/config";
 
 const ExtensionAuth = () => {
   const [status, setStatus] = useState("");
@@ -21,7 +22,24 @@ const ExtensionAuth = () => {
 
     try {
       const result = await signInWithPopup(auth, googleProvider);
-      const idToken = await result.user.getIdToken();
+      const user = result.user;
+
+      // Ensure user exists in Firestore (same as web loginWithGoogle)
+      const docRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) {
+        await setDoc(docRef, {
+          uid: user.uid,
+          name: user.displayName || user.email.split("@")[0],
+          email: user.email,
+          role: "student",
+          createdAt: serverTimestamp()
+        });
+      }
+
+      // Get a fresh ID token to pass back to the extension
+      const idToken = await user.getIdToken();
+
       setStatus("Success! Returning to VS Code...");
       window.location.href = `${decodeURIComponent(redirectUri)}?idToken=${encodeURIComponent(idToken)}`;
     } catch (err) {
@@ -53,6 +71,10 @@ const ExtensionAuth = () => {
               </div>
             )}
 
+            <p className="text-slate-300 text-sm mb-6">
+              Click below to sign in with your Google account and connect it to VS Code.
+            </p>
+
             <button
               onClick={handleGoogleSignIn}
               disabled={loading}
@@ -75,7 +97,7 @@ const ExtensionAuth = () => {
             </button>
 
             <p className="text-slate-500 text-xs mt-4">
-              Click the button above to complete Google sign-in for VS Code.
+              This connects your Google account to the DevSkill VS Code extension so your coding progress is tracked under your profile.
             </p>
           </div>
         )}
