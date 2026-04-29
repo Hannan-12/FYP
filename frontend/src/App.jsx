@@ -27,6 +27,7 @@ import Quests from "./pages/user/Quests";
 import MySessions from "./pages/user/MySessions";
 import UserSessionDetail from "./pages/user/UserSessionDetail";
 import LanguageStats from "./pages/user/LanguageStats";
+import Leaderboard from "./pages/user/Leaderboard";
 
 function App() {
   return (
@@ -55,6 +56,7 @@ function App() {
             <Route path="session/:id" element={<UserSessionDetail />} />
             <Route path="profile" element={<UserProfile />} />
             <Route path="languages" element={<LanguageStats />} />
+            <Route path="leaderboard" element={<Leaderboard />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

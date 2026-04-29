@@ -274,9 +274,14 @@ const Progress = () => {
                 key={index}
                 className="bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 rounded-xl p-4 text-center"
               >
-                <Trophy className="text-yellow-400 mx-auto mb-2" size={32} />
+                <div className="text-4xl mb-2">{badge.icon || "🏆"}</div>
                 <p className="text-white font-semibold">{badge.name}</p>
                 <p className="text-slate-400 text-xs mt-1">{badge.description}</p>
+                {badge.earnedAt && (
+                  <p className="text-slate-600 text-[10px] mt-2">
+                    {new Date(badge.earnedAt).toLocaleDateString()}
+                  </p>
+                )}
               </div>
             ))}
           </div>

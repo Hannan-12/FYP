@@ -300,14 +300,32 @@ const Quests = () => {
     const validationMessage = analysis.stats?.validationMessage || "";
     const validationDetails = analysis.stats?.validationDetails || [];
 
+    // Badge definitions — checked after XP update
+    const BADGE_DEFS = [
+      { id: "first_quest",    name: "First Steps",      description: "Complete your first quest",           icon: "🎯", check: (p) => p.questsCompleted >= 1 },
+      { id: "quests_5",       name: "Getting Started",  description: "Complete 5 quests",                   icon: "🔥", check: (p) => p.questsCompleted >= 5 },
+      { id: "quests_10",      name: "Quest Hunter",     description: "Complete 10 quests",                  icon: "🏹", check: (p) => p.questsCompleted >= 10 },
+      { id: "quests_25",      name: "Quest Master",     description: "Complete 25 quests",                  icon: "👑", check: (p) => p.questsCompleted >= 25 },
+      { id: "xp_100",         name: "Century",          description: "Earn 100 XP",                         icon: "💯", check: (p) => p.totalXP >= 100 },
+      { id: "xp_500",         name: "XP Legend",        description: "Earn 500 XP",                         icon: "⚡", check: (p) => p.totalXP >= 500 },
+      { id: "authentic_coder",name: "Authentic Coder",  description: "Submit a quest with AI score < 20%",  icon: "🛡️", check: (_, aiProb) => aiProb < 20 },
+      { id: "intermediate",   name: "Leveling Up",      description: "Reach Intermediate skill level",      icon: "📈", check: (_, __, skill) => skill === "Intermediate" || skill === "Advanced" },
+      { id: "advanced",       name: "Elite Coder",      description: "Reach Advanced skill level",          icon: "🚀", check: (_, __, skill) => skill === "Advanced" },
+    ];
+
     // Award XP if passed
     let xpAwarded = false;
+    let newBadges = [];
     if (solutionPassed) {
       try {
         const profileRef = doc(db, "userProfiles", user.uid);
         const profileSnap = await getDoc(profileRef);
+        const aiProb = analysis.stats?.aiProbability ?? 0;
+        const skill = analysis.stats?.skillLevel || "Beginner";
+
+        let updatedProfile;
         if (!profileSnap.exists()) {
-          await setDoc(profileRef, {
+          updatedProfile = {
             userId: user.uid,
             email: user.email,
             totalXP: activeQuest.xp,
@@ -316,15 +334,38 @@ const Quests = () => {
             badges: [],
             lastQuestDate: serverTimestamp(),
             createdAt: serverTimestamp()
-          });
+          };
+          await setDoc(profileRef, updatedProfile);
         } else {
           await updateDoc(profileRef, {
             totalXP: increment(activeQuest.xp),
             questsCompleted: increment(1),
             lastQuestDate: serverTimestamp()
           });
+          const updated = await getDoc(profileRef);
+          updatedProfile = updated.data();
         }
         xpAwarded = true;
+
+        // Check which badges are newly unlocked
+        const existingIds = new Set((updatedProfile.badges || []).map(b => b.id));
+        newBadges = BADGE_DEFS.filter(
+          def => !existingIds.has(def.id) && def.check(updatedProfile, aiProb, skill)
+        ).map(({ check: _check, ...rest }) => ({ ...rest, earnedAt: new Date().toISOString() }));
+
+        // Update avgAIScore (rolling average) and skillLevel for leaderboard
+        const prevCount = (updatedProfile.questsCompleted || 1);
+        const prevAvg = updatedProfile.avgAIScore ?? 0;
+        const newAvgAI = ((prevAvg * (prevCount - 1)) + aiProb) / prevCount;
+        const leaderboardUpdate = {
+          avgAIScore: parseFloat(newAvgAI.toFixed(2)),
+          skillLevel: skill,
+          name: user.displayName || user.email?.split("@")[0] || "",
+        };
+        if (newBadges.length > 0) {
+          leaderboardUpdate.badges = [...(updatedProfile.badges || []), ...newBadges];
+        }
+        await updateDoc(profileRef, leaderboardUpdate);
       } catch (err) {
         console.error("Failed to update XP:", err);
       }
@@ -350,6 +391,7 @@ const Quests = () => {
       confidence: analysis.stats?.confidence ?? 0,
       aiProbability: analysis.stats?.aiProbability ?? 0,
       xpEarned: xpAwarded ? activeQuest.xp : 0,
+      newBadges,
       message,
       aiDetection: analysis.stats?.aiDetection || null
     });
@@ -512,6 +554,26 @@ const Quests = () => {
                           </div>
                         )}
                       </div>
+
+                      {/* New badges unlocked */}
+                      {result.newBadges?.length > 0 && (
+                        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+                          <p className="text-yellow-400 font-bold text-sm mb-3 flex items-center gap-2">
+                            <Trophy size={16} /> Badges Unlocked!
+                          </p>
+                          <div className="flex flex-wrap gap-3">
+                            {result.newBadges.map(badge => (
+                              <div key={badge.id} className="flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 px-3 py-2 rounded-lg">
+                                <span className="text-xl">{badge.icon}</span>
+                                <div>
+                                  <p className="text-white text-sm font-bold">{badge.name}</p>
+                                  <p className="text-slate-400 text-xs">{badge.description}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {/* AI Detection Signal Breakdown */}
                       {result.aiDetection?.signals && (
