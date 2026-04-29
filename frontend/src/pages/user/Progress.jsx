@@ -58,6 +58,7 @@ const Progress = () => {
           // Create default profile
           const defaultProfile = {
             userId: user.uid,
+            name: user.displayName || "",
             email: user.email,
             totalXP: 0,
             questsCompleted: 0,

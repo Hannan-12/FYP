@@ -69,19 +69,12 @@ const Leaderboard = () => {
   const loadLeaderboard = async () => {
     setLoading(true);
     try {
-      // Fetch all profiles, all sessions, and all users in parallel
-      const [profilesSnap, sessionsSnap, usersSnap] = await Promise.all([
+      // Fetch all profiles and sessions in parallel
+      // (users collection is not readable by other users per Firestore rules — name comes from userProfiles)
+      const [profilesSnap, sessionsSnap] = await Promise.all([
         getDocs(collection(db, "userProfiles")).catch(e => { console.error("userProfiles fetch failed:", e.code); return { docs: [] }; }),
         getDocs(collection(db, "sessions")).catch(e => { console.error("sessions fetch failed:", e.code); return { docs: [] }; }),
-        getDocs(collection(db, "users")).catch(e => { console.error("users fetch failed:", e.code); return { docs: [] }; }),
       ]);
-      console.log("Leaderboard fetched — profiles:", profilesSnap.docs.length, "sessions:", sessionsSnap.docs.length, "users:", usersSnap.docs.length);
-
-      // Build user info map from users collection (email, name)
-      const userInfoMap = {};
-      usersSnap.docs.forEach(d => {
-        userInfoMap[d.id] = d.data();
-      });
 
       // Group sessions by userId
       const sessionsByUser = {};
@@ -113,7 +106,6 @@ const Leaderboard = () => {
 
       allUids.forEach(uid => {
         const p = profileMap[uid] || {};
-        const userInfo = userInfoMap[uid] || {};
         const userSessions = sessionsByUser[uid] || [];
 
         // Compute fresh EMA from all sessions
@@ -129,10 +121,11 @@ const Leaderboard = () => {
 
         const combinedScore = parseFloat(((p.totalXP || 0) * (authenticity / 100)).toFixed(1));
 
-        // Also check session data for email (extension users may not have a users doc)
+        // Fall back to session email for extension users who have no userProfile email
         const sessionEmail = userSessions.find(s => s.email)?.email || "";
-        const email = p.email || userInfo.email || sessionEmail;
-        const name = p.name || userInfo.name || email?.split("@")[0] || "";
+        const email = p.email || sessionEmail;
+        // Name comes from userProfiles (set at registration or updated via profile page)
+        const name = p.name || email?.split("@")[0] || "";
 
         rows.push({
           ...p,
@@ -174,7 +167,7 @@ const Leaderboard = () => {
   const myRank = useMemo(() => ranked.find(p => p.uid === user?.uid || p.id === user?.uid), [ranked, user]);
 
   const getDisplayName = (p) => {
-    const name = p.name || p.email?.split("@")[0] || "Anonymous";
+    const name = p.name || p.email?.split("@")[0] || p.uid?.slice(0, 8) || "Anonymous";
     return name.length > 22 ? name.slice(0, 22) + "…" : name;
   };
 
