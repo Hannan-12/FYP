@@ -9,6 +9,7 @@ import LandingPage from "./pages/LandingPage";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
+import ExtensionAuth from "./pages/auth/ExtensionAuth";
 
 // Admin Components
 import AdminLayout from "./layouts/AdminLayout";
@@ -37,6 +38,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/auth/extension" element={<ExtensionAuth />} />
 
           <Route path="/" element={<LandingPage />} />
 

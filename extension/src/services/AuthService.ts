@@ -155,7 +155,7 @@ export class AuthService implements vscode.Disposable {
         vscode.Uri.parse(`${vscode.env.uriScheme}://devskill-tracker/google-auth`)
       );
 
-      const authUrl = `https://devskill-fyp.firebaseapp.com/__/auth/handler?` +
+      const authUrl = `https://fyp-ten-gray.vercel.app/auth/extension?` +
         `redirect_uri=${encodeURIComponent(callbackUri.toString())}`;
 
       // Store a promise that resolves when the URI handler fires
