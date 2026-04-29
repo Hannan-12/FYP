@@ -33,9 +33,10 @@ const formatDuration = (seconds) => {
   return `${m}m ${s}s`;
 };
 
-const formatDate = (timestamp) => {
-  if (!timestamp?.seconds) return "—";
-  return new Date(timestamp.seconds * 1000).toLocaleString(undefined, {
+const formatDate = (session) => {
+  const ts = session.timestamp || session.startTime || session.createdAt;
+  if (!ts?.seconds) return "—";
+  return new Date(ts.seconds * 1000).toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
   });
 };
@@ -257,7 +258,7 @@ const AdminDashboard = () => {
                       </td>
                       <td className="p-4 text-slate-400 capitalize">{session.language || "—"}</td>
                       <td className="p-4 text-slate-400 tabular-nums">{formatDuration(duration)}</td>
-                      <td className="p-4 text-slate-500 text-sm tabular-nums whitespace-nowrap">{formatDate(session.timestamp)}</td>
+                      <td className="p-4 text-slate-500 text-sm tabular-nums whitespace-nowrap">{formatDate(session)}</td>
                       <td className="p-4 text-right pr-6">
                         <ChevronRight size={18} className="ml-auto text-slate-600 group-hover:text-blue-400 transition-colors" />
                       </td>

@@ -120,8 +120,11 @@ const SessionDetail = () => {
           </div>
           <p className="text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm mt-1">
             <span className="flex items-center gap-1"><User size={13} /> {session.email}</span>
-            {session.timestamp?.seconds && (
-              <span className="flex items-center gap-1"><Calendar size={13} /> {new Date(session.timestamp.seconds * 1000).toLocaleString()}</span>
+            {(session.timestamp || session.startTime || session.createdAt)?.seconds && (
+              <span className="flex items-center gap-1">
+                <Calendar size={13} />
+                {new Date(((session.timestamp || session.startTime || session.createdAt).seconds) * 1000).toLocaleString()}
+              </span>
             )}
           </p>
         </div>
