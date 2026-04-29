@@ -300,6 +300,43 @@ const Quests = () => {
     const validationMessage = analysis.stats?.validationMessage || "";
     const validationDetails = analysis.stats?.validationDetails || [];
 
+    // Always update avgAIScore on every submission (pass or fail) for leaderboard consistency
+    const aiProbForAvg = analysis.stats?.aiProbability ?? 0;
+    const skillForProfile = analysis.stats?.skillLevel || "Beginner";
+    try {
+      const profileRef2 = doc(db, "userProfiles", user.uid);
+      const snap2 = await getDoc(profileRef2);
+      if (snap2.exists()) {
+        const d = snap2.data();
+        const prevCount2 = Math.max((d.submissionCount || 0), 0);
+        const prevAvg2 = d.avgAIScore ?? 0;
+        const newAvg2 = prevCount2 === 0
+          ? aiProbForAvg
+          : ((prevAvg2 * prevCount2) + aiProbForAvg) / (prevCount2 + 1);
+        await updateDoc(profileRef2, {
+          avgAIScore: parseFloat(newAvg2.toFixed(2)),
+          submissionCount: prevCount2 + 1,
+          skillLevel: skillForProfile,
+          name: user.displayName || user.email?.split("@")[0] || "",
+        });
+      } else {
+        await setDoc(profileRef2, {
+          userId: user.uid,
+          email: user.email,
+          name: user.displayName || user.email?.split("@")[0] || "",
+          totalXP: 0,
+          questsCompleted: 0,
+          streak: 0,
+          badges: [],
+          avgAIScore: aiProbForAvg,
+          submissionCount: 1,
+          skillLevel: skillForProfile,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to update avgAIScore:", e);
+    }
+
     // Badge definitions — checked after XP update
     const BADGE_DEFS = [
       { id: "first_quest",    name: "First Steps",      description: "Complete your first quest",           icon: "🎯", check: (p) => p.questsCompleted >= 1 },
@@ -353,19 +390,11 @@ const Quests = () => {
           def => !existingIds.has(def.id) && def.check(updatedProfile, aiProb, skill)
         ).map(({ check: _check, ...rest }) => ({ ...rest, earnedAt: new Date().toISOString() }));
 
-        // Update avgAIScore (rolling average) and skillLevel for leaderboard
-        const prevCount = (updatedProfile.questsCompleted || 1);
-        const prevAvg = updatedProfile.avgAIScore ?? 0;
-        const newAvgAI = ((prevAvg * (prevCount - 1)) + aiProb) / prevCount;
-        const leaderboardUpdate = {
-          avgAIScore: parseFloat(newAvgAI.toFixed(2)),
-          skillLevel: skill,
-          name: user.displayName || user.email?.split("@")[0] || "",
-        };
         if (newBadges.length > 0) {
-          leaderboardUpdate.badges = [...(updatedProfile.badges || []), ...newBadges];
+          await updateDoc(profileRef, {
+            badges: [...(updatedProfile.badges || []), ...newBadges]
+          });
         }
-        await updateDoc(profileRef, leaderboardUpdate);
       } catch (err) {
         console.error("Failed to update XP:", err);
       }

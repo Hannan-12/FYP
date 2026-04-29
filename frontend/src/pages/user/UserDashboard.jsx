@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom"; // Added navigate
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
-import { collection, query, where, orderBy, onSnapshot, getDocs } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, getDocs, doc, getDoc } from "firebase/firestore";
 import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon, Zap, Globe, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
@@ -40,19 +40,36 @@ const UserDashboard = () => {
       return;
     }
 
-    const processSessionData = (data) => {
+    const processSessionData = async (data) => {
       setSessions(data);
 
       if (data.length > 0) {
-        // Filter to sessions that have stats (quest sessions)
-        const questSessions = data.filter(s => s.stats);
-        const avgAcc = questSessions.length > 0
-          ? 100 - (questSessions.reduce((acc, curr) => acc + (curr.stats?.aiProbability || 0), 0) / questSessions.length)
-          : 100;
+        // Read avgAIScore from userProfiles (same source as leaderboard)
+        let accuracy = 100;
+        let skill = "N/A";
+        try {
+          const profileSnap = await getDoc(doc(db, "userProfiles", user.uid));
+          if (profileSnap.exists()) {
+            const pd = profileSnap.data();
+            accuracy = Math.round(100 - (pd.avgAIScore ?? 0));
+            skill = pd.skillLevel || "N/A";
+          } else {
+            const questSessions = data.filter(s => s.stats);
+            accuracy = questSessions.length > 0
+              ? Math.round(100 - (questSessions.reduce((acc, curr) => acc + (curr.stats?.aiProbability || 0), 0) / questSessions.length))
+              : 100;
+            skill = questSessions[0]?.stats?.skillLevel || "N/A";
+          }
+        } catch {
+          const questSessions = data.filter(s => s.stats);
+          accuracy = questSessions.length > 0
+            ? Math.round(100 - (questSessions.reduce((acc, curr) => acc + (curr.stats?.aiProbability || 0), 0) / questSessions.length))
+            : 100;
+        }
         setStats({
           total: data.length,
-          accuracy: Math.round(avgAcc),
-          skill: questSessions[0]?.stats?.skillLevel || "N/A"
+          accuracy,
+          skill
         });
 
         const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
