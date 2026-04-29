@@ -24,9 +24,6 @@ export class AuthService implements vscode.Disposable {
   };
   private tokenRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private onAuthStateChangedEmitter = new vscode.EventEmitter<AuthState>();
-  private pendingGoogleResolve: ((token: string) => void) | null = null;
-  private pendingGoogleReject: ((err: Error) => void) | null = null;
-
   /**
    * Event fired when authentication state changes
    */
@@ -36,22 +33,6 @@ export class AuthService implements vscode.Disposable {
     private context: vscode.ExtensionContext,
     private configService: ConfigService
   ) {
-    // Register URI handler once for the lifetime of the extension
-    const uriHandler = vscode.window.registerUriHandler({
-      handleUri: (uri: vscode.Uri) => {
-        const params = new URLSearchParams(uri.query);
-        const idToken = params.get('idToken');
-        if (idToken && this.pendingGoogleResolve) {
-          this.pendingGoogleResolve(idToken);
-        } else if (this.pendingGoogleReject) {
-          this.pendingGoogleReject(new Error('No ID token received from Google sign-in.'));
-        }
-        this.pendingGoogleResolve = null;
-        this.pendingGoogleReject = null;
-      }
-    });
-    context.subscriptions.push(uriHandler);
-
     this.restoreSession();
   }
 
@@ -152,83 +133,6 @@ export class AuthService implements vscode.Disposable {
       Logger.error('Email/password sign up failed', error);
       throw error;
     }
-  }
-
-  /**
-   * Sign in with Google using Firebase's signInWithIdToken via a custom token flow.
-   * Opens the DevSkill web app's /auth/google-extension page, which performs the
-   * Google popup, then passes the Firebase ID token back via a vscode:// URI.
-   */
-  async signInWithGoogle(): Promise<void> {
-    Logger.info('Attempting Google OAuth sign in via browser');
-
-    const apiKey = this.configService.getAuth().firebaseApiKey;
-    if (!apiKey) {
-      throw new Error('Firebase API key not configured.');
-    }
-
-    try {
-      const callbackUri = await vscode.env.asExternalUri(
-        vscode.Uri.parse(`${vscode.env.uriScheme}://devskill-tracker/google-auth`)
-      );
-
-      const authUrl = `https://fyp-ten-gray.vercel.app/auth/extension?` +
-        `redirect_uri=${encodeURIComponent(callbackUri.toString(true))}`;
-
-      const tokenPromise = new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          this.pendingGoogleResolve = null;
-          this.pendingGoogleReject = null;
-          reject(new Error('Google sign-in timed out. Please try again.'));
-        }, 120000);
-
-        this.pendingGoogleResolve = (token: string) => {
-          clearTimeout(timeout);
-          resolve(token);
-        };
-        this.pendingGoogleReject = (err: Error) => {
-          clearTimeout(timeout);
-          reject(err);
-        };
-      });
-
-      await vscode.env.openExternal(vscode.Uri.parse(authUrl));
-      vscode.window.showInformationMessage('Complete Google sign-in in your browser...');
-
-      const idToken = await tokenPromise;
-      await this.exchangeGoogleIdToken(idToken, apiKey);
-
-      Logger.info('Google sign in successful');
-    } catch (error) {
-      Logger.error('Google sign in failed', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Exchange a Google ID token for Firebase credentials
-   */
-  private async exchangeGoogleIdToken(idToken: string, apiKey: string): Promise<void> {
-    const url = `${AuthService.FIREBASE_API_BASE}/accounts:signInWithIdp?key=${apiKey}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        postBody: `id_token=${idToken}&providerId=google.com`,
-        requestUri: 'http://localhost',
-        returnSecureToken: true,
-        returnIdpCredential: true
-      })
-    });
-
-    if (!response.ok) {
-      const error: any = await response.json();
-      throw new Error(error.error?.message || 'Google sign-in exchange failed');
-    }
-
-    const data: any = await response.json();
-    await this.handleSuccessfulAuth(data, 'google');
-    vscode.window.showInformationMessage(`Signed in as ${data.email}`);
   }
 
   /**
@@ -393,7 +297,7 @@ export class AuthService implements vscode.Disposable {
   /**
    * Handle successful authentication response
    */
-  private async handleSuccessfulAuth(authResponse: any, method: 'email' | 'google' = 'email'): Promise<void> {
+  private async handleSuccessfulAuth(authResponse: any): Promise<void> {
     // Store tokens securely
     await this.context.secrets.store(AuthService.TOKEN_KEY, authResponse.idToken);
     await this.context.secrets.store(AuthService.REFRESH_TOKEN_KEY, authResponse.refreshToken);
@@ -418,7 +322,7 @@ export class AuthService implements vscode.Disposable {
     this.authState = {
       isAuthenticated: true,
       user,
-      authMethod: method,
+      authMethod: 'email',
       lastAuthTime: Date.now(),
       tokenExpiry
     };
