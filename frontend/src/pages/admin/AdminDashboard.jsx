@@ -156,7 +156,7 @@ const AdminDashboard = () => {
                   {skillData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                 </Pie>
                 <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#fff" }} />
-                <Legend />
+                <Legend wrapperStyle={{ color: "#94a3b8", fontSize: 12 }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
