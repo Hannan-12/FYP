@@ -69,11 +69,18 @@ const Leaderboard = () => {
   const loadLeaderboard = async () => {
     setLoading(true);
     try {
-      // Fetch all profiles and all sessions in parallel
-      const [profilesSnap, sessionsSnap] = await Promise.all([
+      // Fetch all profiles, all sessions, and all users in parallel
+      const [profilesSnap, sessionsSnap, usersSnap] = await Promise.all([
         getDocs(collection(db, "userProfiles")),
         getDocs(collection(db, "sessions")),
+        getDocs(collection(db, "users")),
       ]);
+
+      // Build user info map from users collection (email, name)
+      const userInfoMap = {};
+      usersSnap.docs.forEach(d => {
+        userInfoMap[d.id] = d.data();
+      });
 
       // Group sessions by userId
       const sessionsByUser = {};
@@ -85,13 +92,27 @@ const Leaderboard = () => {
         sessionsByUser[uid].push(s);
       });
 
-      // Build ranked list
-      const rows = [];
-      const updates = []; // collect Firestore updates for existing users
-
+      // Build a map of existing userProfiles by uid
+      const profileMap = {};
       profilesSnap.docs.forEach(d => {
         const p = { id: d.id, ...d.data() };
         const uid = p.userId || p.id;
+        profileMap[uid] = p;
+      });
+
+      // Union of all uids: from userProfiles + from sessions
+      const allUids = new Set([
+        ...Object.keys(profileMap),
+        ...Object.keys(sessionsByUser),
+      ]);
+
+      // Build ranked list
+      const rows = [];
+      const updates = [];
+
+      allUids.forEach(uid => {
+        const p = profileMap[uid] || {};
+        const userInfo = userInfoMap[uid] || {};
         const userSessions = sessionsByUser[uid] || [];
 
         // Compute fresh EMA from all sessions
@@ -107,11 +128,24 @@ const Leaderboard = () => {
 
         const combinedScore = parseFloat(((p.totalXP || 0) * (authenticity / 100)).toFixed(1));
 
-        rows.push({ ...p, uid, avgAIScore, authenticity, skillLevel, combinedScore, sessionCount: userSessions.length });
+        const name = p.name || userInfo.name || userInfo.email?.split("@")[0] || "";
+        const email = p.email || userInfo.email || "";
 
-        // Queue update if EMA changed meaningfully from stored value
-        if (emaAI !== null && Math.abs(avgAIScore - (p.avgAIScore ?? -1)) > 0.01) {
-          updates.push({ ref: doc(db, "userProfiles", d.id), avgAIScore, skillLevel });
+        rows.push({
+          ...p,
+          uid,
+          name,
+          email,
+          avgAIScore,
+          authenticity,
+          skillLevel,
+          combinedScore,
+          sessionCount: userSessions.length,
+        });
+
+        // Queue Firestore update if EMA changed meaningfully
+        if (emaAI !== null && p.id && Math.abs(avgAIScore - (p.avgAIScore ?? -1)) > 0.01) {
+          updates.push({ ref: doc(db, "userProfiles", p.id), avgAIScore, skillLevel });
         }
       });
 
