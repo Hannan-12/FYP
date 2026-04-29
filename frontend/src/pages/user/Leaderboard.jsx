@@ -129,8 +129,10 @@ const Leaderboard = () => {
 
         const combinedScore = parseFloat(((p.totalXP || 0) * (authenticity / 100)).toFixed(1));
 
-        const name = p.name || userInfo.name || userInfo.email?.split("@")[0] || "";
-        const email = p.email || userInfo.email || "";
+        // Also check session data for email (extension users may not have a users doc)
+        const sessionEmail = userSessions.find(s => s.email)?.email || "";
+        const email = p.email || userInfo.email || sessionEmail;
+        const name = p.name || userInfo.name || email?.split("@")[0] || "";
 
         rows.push({
           ...p,
