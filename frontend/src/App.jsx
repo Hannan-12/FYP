@@ -14,6 +14,7 @@ import ForgotPassword from "./pages/auth/ForgotPassword";
 import AdminLayout from "./layouts/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import StudentList from "./pages/admin/StudentList";
+import StudentDetail from "./pages/admin/StudentDetail";
 import SessionDetail from "./pages/admin/SessionDetail";
 import Analytics from "./pages/admin/Analytics";
 
@@ -41,6 +42,7 @@ function App() {
           <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminLayout /></ProtectedRoute>}>
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="students" element={<StudentList />} />
+            <Route path="student/:uid" element={<StudentDetail />} />
             <Route path="session/:id" element={<SessionDetail />} />
             <Route path="analytics" element={<Analytics />} />
           </Route>

@@ -23,9 +23,16 @@ export const AuthProvider = ({ children }) => {
           const docSnap = await getDoc(docRef);
 
           if (docSnap.exists()) {
-            setUserRole(docSnap.data().role);
+            const data = docSnap.data();
+            if (data.isActive === false) {
+              // Account disabled by admin — force sign out
+              await signOut(auth);
+              setUser(null);
+              setUserRole(null);
+              return;
+            }
+            setUserRole(data.role);
           } else {
-            // Fallback if no record exists (assume student)
             setUserRole("student");
           }
           setUser(currentUser);
