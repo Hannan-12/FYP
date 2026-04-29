@@ -69,12 +69,16 @@ const Leaderboard = () => {
   const loadLeaderboard = async () => {
     setLoading(true);
     try {
-      // Fetch all profiles and sessions in parallel
-      // (users collection is not readable by other users per Firestore rules — name comes from userProfiles)
-      const [profilesSnap, sessionsSnap] = await Promise.all([
+      // Fetch all profiles, sessions, and users in parallel
+      const [profilesSnap, sessionsSnap, usersSnap] = await Promise.all([
         getDocs(collection(db, "userProfiles")).catch(e => { console.error("userProfiles fetch failed:", e.code); return { docs: [] }; }),
         getDocs(collection(db, "sessions")).catch(e => { console.error("sessions fetch failed:", e.code); return { docs: [] }; }),
+        getDocs(collection(db, "users")).catch(e => { console.error("users fetch failed:", e.code); return { docs: [] }; }),
       ]);
+
+      // Build user info map from users collection (has the registered name)
+      const userInfoMap = {};
+      usersSnap.docs.forEach(d => { userInfoMap[d.id] = d.data(); });
 
       // Group sessions by userId
       const sessionsByUser = {};
@@ -106,6 +110,7 @@ const Leaderboard = () => {
 
       allUids.forEach(uid => {
         const p = profileMap[uid] || {};
+        const userInfo = userInfoMap[uid] || {};
         const userSessions = sessionsByUser[uid] || [];
 
         // Compute fresh EMA from all sessions
@@ -123,9 +128,9 @@ const Leaderboard = () => {
 
         // Fall back to session email for extension users who have no userProfile email
         const sessionEmail = userSessions.find(s => s.email)?.email || "";
-        const email = p.email || sessionEmail;
-        // Name comes from userProfiles (set at registration or updated via profile page)
-        const name = p.name || email?.split("@")[0] || "";
+        const email = p.email || userInfo.email || sessionEmail;
+        // Prefer registered name from users collection, then userProfiles, then email username
+        const name = userInfo.name || p.name || email?.split("@")[0] || "";
 
         rows.push({
           ...p,

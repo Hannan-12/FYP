@@ -73,8 +73,9 @@ const UserProfile = () => {
     setSaving(true);
     setMessage("");
     try {
-      await updateDoc(doc(db, "users", user.uid), { name });
-      // Always write name to userProfiles (create if missing) so leaderboard shows correct name
+      // Update users doc if it exists (ignore if missing — rules require role on create)
+      await updateDoc(doc(db, "users", user.uid), { name }).catch(() => {});
+      // Always write name to userProfiles (create if missing)
       await setDoc(doc(db, "userProfiles", user.uid), { name }, { merge: true });
       setUserData(prev => ({ ...prev, name }));
       setMessage("Profile updated successfully!");
