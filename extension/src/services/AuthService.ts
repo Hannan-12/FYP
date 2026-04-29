@@ -1,7 +1,7 @@
 // src/services/AuthService.ts
 
 import * as vscode from 'vscode';
-import { AuthState, FirebaseUser, AuthCredentials } from '../types/auth.types';
+import { AuthState, FirebaseUser } from '../types/auth.types';
 import { ConfigService } from './ConfigService';
 import { Logger } from '../utils/logger';
 
@@ -22,8 +22,10 @@ export class AuthService implements vscode.Disposable {
     lastAuthTime: 0,
     tokenExpiry: 0
   };
-  private tokenRefreshTimer: NodeJS.Timeout | null = null;
+  private tokenRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private onAuthStateChangedEmitter = new vscode.EventEmitter<AuthState>();
+  private pendingGoogleResolve: ((token: string) => void) | null = null;
+  private pendingGoogleReject: ((err: Error) => void) | null = null;
 
   /**
    * Event fired when authentication state changes
@@ -34,7 +36,22 @@ export class AuthService implements vscode.Disposable {
     private context: vscode.ExtensionContext,
     private configService: ConfigService
   ) {
-    // Try to restore session on initialization
+    // Register URI handler once for the lifetime of the extension
+    const uriHandler = vscode.window.registerUriHandler({
+      handleUri: (uri: vscode.Uri) => {
+        const params = new URLSearchParams(uri.query);
+        const idToken = params.get('idToken');
+        if (idToken && this.pendingGoogleResolve) {
+          this.pendingGoogleResolve(idToken);
+        } else if (this.pendingGoogleReject) {
+          this.pendingGoogleReject(new Error('No ID token received from Google sign-in.'));
+        }
+        this.pendingGoogleResolve = null;
+        this.pendingGoogleReject = null;
+      }
+    });
+    context.subscriptions.push(uriHandler);
+
     this.restoreSession();
   }
 
@@ -156,28 +173,23 @@ export class AuthService implements vscode.Disposable {
       );
 
       const authUrl = `https://fyp-ten-gray.vercel.app/auth/extension?` +
-        `redirect_uri=${encodeURIComponent(callbackUri.toString())}`;
+        `redirect_uri=${encodeURIComponent(callbackUri.toString(true))}`;
 
-      // Store a promise that resolves when the URI handler fires
       const tokenPromise = new Promise<string>((resolve, reject) => {
         const timeout = setTimeout(() => {
-          disposable.dispose();
+          this.pendingGoogleResolve = null;
+          this.pendingGoogleReject = null;
           reject(new Error('Google sign-in timed out. Please try again.'));
-        }, 120000); // 2 minute timeout
+        }, 120000);
 
-        const disposable = vscode.window.registerUriHandler({
-          handleUri: async (uri: vscode.Uri) => {
-            clearTimeout(timeout);
-            disposable.dispose();
-            const params = new URLSearchParams(uri.query);
-            const idToken = params.get('idToken');
-            if (idToken) {
-              resolve(idToken);
-            } else {
-              reject(new Error('No ID token received from Google sign-in.'));
-            }
-          }
-        });
+        this.pendingGoogleResolve = (token: string) => {
+          clearTimeout(timeout);
+          resolve(token);
+        };
+        this.pendingGoogleReject = (err: Error) => {
+          clearTimeout(timeout);
+          reject(err);
+        };
       });
 
       await vscode.env.openExternal(vscode.Uri.parse(authUrl));
@@ -215,7 +227,7 @@ export class AuthService implements vscode.Disposable {
     }
 
     const data: any = await response.json();
-    await this.handleSuccessfulAuth(data);
+    await this.handleSuccessfulAuth(data, 'google');
     vscode.window.showInformationMessage(`Signed in as ${data.email}`);
   }
 
@@ -381,7 +393,7 @@ export class AuthService implements vscode.Disposable {
   /**
    * Handle successful authentication response
    */
-  private async handleSuccessfulAuth(authResponse: any): Promise<void> {
+  private async handleSuccessfulAuth(authResponse: any, method: 'email' | 'google' = 'email'): Promise<void> {
     // Store tokens securely
     await this.context.secrets.store(AuthService.TOKEN_KEY, authResponse.idToken);
     await this.context.secrets.store(AuthService.REFRESH_TOKEN_KEY, authResponse.refreshToken);
@@ -406,7 +418,7 @@ export class AuthService implements vscode.Disposable {
     this.authState = {
       isAuthenticated: true,
       user,
-      authMethod: 'email',
+      authMethod: method,
       lastAuthTime: Date.now(),
       tokenExpiry
     };
