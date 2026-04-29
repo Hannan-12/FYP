@@ -41,7 +41,9 @@ const ExtensionAuth = () => {
       const idToken = await user.getIdToken();
 
       setStatus("Success! Returning to VS Code...");
-      window.location.href = `${decodeURIComponent(redirectUri)}?idToken=${encodeURIComponent(idToken)}`;
+      const base = decodeURIComponent(redirectUri);
+      const separator = base.includes("?") ? "&" : "?";
+      window.location.href = `${base}${separator}idToken=${encodeURIComponent(idToken)}`;
     } catch (err) {
       setLoading(false);
       if (err.code === "auth/popup-closed-by-user") {
