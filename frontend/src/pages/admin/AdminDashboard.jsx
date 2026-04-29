@@ -155,7 +155,7 @@ const AdminDashboard = () => {
                 <Pie data={skillData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
                   {skillData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                 </Pie>
-                <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#fff" }} />
+                <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#fff" }} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#fff" }} />
                 <Legend wrapperStyle={{ color: "#94a3b8", fontSize: 12 }} />
               </PieChart>
             </ResponsiveContainer>
@@ -175,7 +175,7 @@ const AdminDashboard = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                 <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
                 <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip cursor={{ fill: "#334155", opacity: 0.4 }} contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#fff" }} />
+                <Tooltip cursor={{ fill: "#334155", opacity: 0.4 }} contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#fff" }} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#fff" }} />
                 <Bar dataKey="sessions" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={24} />
               </BarChart>
             </ResponsiveContainer>

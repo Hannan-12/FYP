@@ -10,6 +10,7 @@ import { motion } from "framer-motion";
 import { Brain, Clock, Code, ShieldAlert, Users, Activity } from "lucide-react";
 
 const TOOLTIP_STYLE = { backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#fff", fontSize: 12 };
+const TOOLTIP_PROPS = { contentStyle: TOOLTIP_STYLE, itemStyle: { color: "#fff" }, labelStyle: { color: "#fff" } };
 const GRID_COLOR = "#334155";
 
 const Card = ({ title, subtitle, children, delay = 0, className = "" }) => (
@@ -182,7 +183,7 @@ const Analytics = () => {
                 <Pie data={skillData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={5} dataKey="value" stroke="none">
                   {skillData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
                 </Pie>
-                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <Tooltip {...TOOLTIP_PROPS} />
                 <Legend iconType="circle" iconSize={10} wrapperStyle={{ fontSize: 12, color: "#94a3b8" }} />
               </PieChart>
             </ResponsiveContainer>
@@ -196,7 +197,7 @@ const Analytics = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} horizontal={false} />
                 <XAxis type="number" stroke="#94a3b8" tickLine={false} axisLine={false} allowDecimals={false} tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="name" stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 12 }} width={72} />
-                <Tooltip cursor={{ fill: "#334155", opacity: 0.4 }} contentStyle={TOOLTIP_STYLE} />
+                <Tooltip cursor={{ fill: "#334155", opacity: 0.4 }} {...TOOLTIP_PROPS} />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={16}>
                   {languageData.map((_, i) => <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />)}
                 </Bar>
@@ -221,7 +222,7 @@ const Analytics = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
                 <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                 <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <Tooltip {...TOOLTIP_PROPS} />
                 <Area type="monotone" dataKey="sessions" stroke="#6366f1" strokeWidth={2} fill="url(#sessGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
@@ -235,7 +236,7 @@ const Analytics = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
                 <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                 <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} unit="m" />
-                <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [`${v} min`, "Avg Duration"]} />
+                <Tooltip {...TOOLTIP_PROPS} formatter={(v) => [`${v} min`, "Avg Duration"]} />
                 <Line type="monotone" dataKey="avgMin" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -252,7 +253,7 @@ const Analytics = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
                 <XAxis dataKey="range" stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 12 }} />
                 <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip cursor={{ fill: "#334155", opacity: 0.4 }} contentStyle={TOOLTIP_STYLE} />
+                <Tooltip cursor={{ fill: "#334155", opacity: 0.4 }} {...TOOLTIP_PROPS} />
                 <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={36}>
                   {aiDistData.map((entry) => <Cell key={entry.range} fill={AI_COLORS[entry.range]} />)}
                 </Bar>
@@ -275,7 +276,7 @@ const Analytics = () => {
                   <PolarGrid stroke={GRID_COLOR} />
                   <PolarAngleAxis dataKey="subject" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                   <Radar name="Avg" dataKey="normalized" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.25} strokeWidth={2} />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(_, __, props) => [`${props.payload.value}`, props.payload.subject]} />
+                  <Tooltip {...TOOLTIP_PROPS} formatter={(_, __, props) => [`${props.payload.value}`, props.payload.subject]} />
                 </RadarChart>
               </ResponsiveContainer>
             </div>
