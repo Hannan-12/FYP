@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
-import { doc, getDoc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc, updateDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { motion } from "framer-motion";
 import { User, Mail, Shield, Calendar, Save, Loader2, Star, Trophy, Code, CheckCircle, TrendingUp, Flame, Award } from "lucide-react";
 
@@ -74,9 +74,8 @@ const UserProfile = () => {
     setMessage("");
     try {
       await updateDoc(doc(db, "users", user.uid), { name });
-      // Also update userProfiles so leaderboard shows correct name
-      const profSnap = await getDoc(doc(db, "userProfiles", user.uid));
-      if (profSnap.exists()) await updateDoc(doc(db, "userProfiles", user.uid), { name });
+      // Always write name to userProfiles (create if missing) so leaderboard shows correct name
+      await setDoc(doc(db, "userProfiles", user.uid), { name }, { merge: true });
       setUserData(prev => ({ ...prev, name }));
       setMessage("Profile updated successfully!");
     } catch (e) {
