@@ -1,13 +1,37 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
 import { collection, query, where, orderBy, onSnapshot, getDocs, doc, getDoc } from "firebase/firestore";
-import { Code, TrendingUp, CheckCircle, Activity, PieChart as PieIcon, Zap, Globe, ArrowRight, Star, Flame, Trophy, Medal } from "lucide-react";
+import {
+  Code, TrendingUp, TrendingDown, CheckCircle, Activity, PieChart as PieIcon,
+  Zap, Globe, ArrowRight, Star, Flame, Trophy, Medal, Target
+} from "lucide-react";
 import { motion } from "framer-motion";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import {
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid
+} from "recharts";
 
-const StatCard = ({ title, value, icon: Icon, color, delay, onClick }) => (
+// ── Constants ────────────────────────────────────────────────────────────────
+const COLORS = ["#94a3b8", "#3b82f6", "#10b981"];
+const TOOLTIP_STYLE = { backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#fff", fontSize: 12 };
+const TOOLTIP_PROPS = { contentStyle: TOOLTIP_STYLE, itemStyle: { color: "#fff" }, labelStyle: { color: "#fff" } };
+
+const BADGE_DEFS = [
+  { id: "first_quest",     name: "First Steps",     icon: "🎯", check: (p) => p.questsCompleted >= 1 },
+  { id: "quests_5",        name: "Getting Started",  icon: "🔥", check: (p) => p.questsCompleted >= 5 },
+  { id: "quests_10",       name: "Quest Hunter",     icon: "🏹", check: (p) => p.questsCompleted >= 10 },
+  { id: "quests_25",       name: "Quest Master",     icon: "👑", check: (p) => p.questsCompleted >= 25 },
+  { id: "xp_100",          name: "Century",          icon: "💯", check: (p) => (p.totalXP || 0) >= 100 },
+  { id: "xp_500",          name: "XP Legend",        icon: "⚡", check: (p) => (p.totalXP || 0) >= 500 },
+  { id: "authentic_coder", name: "Authentic Coder",  icon: "🛡️", check: () => false },
+  { id: "intermediate",    name: "Leveling Up",      icon: "📈", check: () => false },
+  { id: "advanced",        name: "Elite Coder",      icon: "🚀", check: () => false },
+];
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+const StatCard = ({ title, value, icon: Icon, color, delay, onClick, sub }) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
@@ -19,6 +43,7 @@ const StatCard = ({ title, value, icon: Icon, color, delay, onClick }) => (
       <div>
         <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
         <h3 className="text-3xl font-bold text-white tracking-tight">{value}</h3>
+        {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
       </div>
       <div className={`p-3 rounded-xl ${color} bg-opacity-10 group-hover:scale-110 transition-transform duration-300`}>
         <Icon size={24} className={color.replace("bg-", "text-")} />
@@ -33,6 +58,7 @@ const getAIColor = (prob) => {
   return "text-rose-400";
 };
 
+// ── Main Component ────────────────────────────────────────────────────────────
 const UserDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -40,88 +66,65 @@ const UserDashboard = () => {
   const [stats, setStats] = useState({ total: 0, accuracy: 0, skill: "N/A" });
   const [chartData, setChartData] = useState([]);
   const [langData, setLangData] = useState([]);
+  const [activityData, setActivityData] = useState([]);
   const [profile, setProfile] = useState(null);
   const [leaderboardRank, setLeaderboardRank] = useState(null);
+  const [rankTotal, setRankTotal] = useState(null);
 
-  // Load userProfiles doc for XP, level, streak, badges
+  // ── Fetch userProfiles ──
   useEffect(() => {
     if (!user?.uid) return;
-    const fetchProfile = async () => {
-      try {
-        const snap = await getDoc(doc(db, "userProfiles", user.uid));
-        if (snap.exists()) setProfile(snap.data());
-      } catch (e) {
-        console.error("Failed to fetch userProfile:", e);
-      }
-    };
-    fetchProfile();
+    getDoc(doc(db, "userProfiles", user.uid))
+      .then(snap => { if (snap.exists()) setProfile(snap.data()); })
+      .catch(() => {});
   }, [user]);
 
-  // Compute leaderboard rank from userProfiles
+  // ── Fetch leaderboard rank (only reads userProfiles, not all sessions) ──
   useEffect(() => {
     if (!user?.uid) return;
-    const fetchRank = async () => {
-      try {
-        const [profilesSnap, sessionsSnap] = await Promise.all([
-          getDocs(collection(db, "userProfiles")),
-          getDocs(collection(db, "sessions")),
-        ]);
-        const sessionsByUser = {};
-        sessionsSnap.docs.forEach(d => {
-          const s = d.data();
-          if (!s.userId) return;
-          if (!sessionsByUser[s.userId]) sessionsByUser[s.userId] = [];
-          sessionsByUser[s.userId].push(s);
-        });
-
-        const rows = profilesSnap.docs.map(d => {
-          const p = { id: d.id, ...d.data() };
-          const uid = p.userId || p.id;
-          const userSessions = sessionsByUser[uid] || [];
-          const withAI = userSessions.filter(s => s.stats?.aiProbability != null)
-            .sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
-          let ema = withAI.length > 0 ? withAI[0].stats.aiProbability : p.avgAIScore ?? 0;
-          for (let i = 1; i < withAI.length; i++) ema = ema * 0.75 + withAI[i].stats.aiProbability * 0.25;
-          const authenticity = 100 - ema;
-          const combinedScore = (p.totalXP || 0) * (authenticity / 100);
-          return { uid, combinedScore };
-        });
-
-        rows.sort((a, b) => b.combinedScore - a.combinedScore);
-        const rank = rows.findIndex(r => r.uid === user.uid || r.uid === user.uid) + 1;
+    getDocs(collection(db, "userProfiles"))
+      .then(snap => {
+        const rows = snap.docs.map(d => {
+          const p = d.data();
+          const uid = p.userId || d.id;
+          const auth = 100 - (p.avgAIScore ?? 0);
+          return { uid, score: (p.totalXP || 0) * (auth / 100) };
+        }).sort((a, b) => b.score - a.score);
+        const rank = rows.findIndex(r => r.uid === user.uid) + 1;
         setLeaderboardRank(rank > 0 ? rank : null);
-      } catch (e) {
-        console.error("Failed to fetch rank:", e);
-      }
-    };
-    fetchRank();
+        setRankTotal(rows.length);
+      })
+      .catch(() => {});
   }, [user]);
 
+  // ── Sessions listener ──
   useEffect(() => {
     if (!user) return;
 
-    const processSessionData = (data) => {
+    const process = (data) => {
       setSessions(data);
       if (data.length === 0) return;
 
-      const questSessions = data.filter(s => s.stats?.aiProbability != null);
-      const accuracy = questSessions.length > 0
-        ? Math.round(100 - (questSessions.reduce((acc, s) => acc + (s.stats.aiProbability || 0), 0) / questSessions.length))
+      // Authenticity from all sessions with aiProbability
+      const withAI = data.filter(s => s.stats?.aiProbability != null);
+      const accuracy = withAI.length > 0
+        ? Math.round(100 - (withAI.reduce((acc, s) => acc + s.stats.aiProbability, 0) / withAI.length))
         : 100;
-      const withSkill = data.filter(s => s.stats?.skillLevel);
-      const skill = withSkill[0]?.stats?.skillLevel || "N/A";
+
+      // Skill level — most recent session with skillLevel
+      const skill = data.find(s => s.stats?.skillLevel)?.stats?.skillLevel || "N/A";
+
       setStats({ total: data.length, accuracy, skill });
 
+      // Skill pie
       const skills = { Beginner: 0, Intermediate: 0, Advanced: 0 };
-      questSessions.forEach(s => {
-        const level = s.stats?.skillLevel || "Beginner";
-        if (skills[level] !== undefined) skills[level]++;
-      });
+      withAI.forEach(s => { const l = s.stats?.skillLevel || "Beginner"; if (l in skills) skills[l]++; });
       setChartData(
         [{ name: "Beginner", value: skills.Beginner }, { name: "Intermediate", value: skills.Intermediate }, { name: "Advanced", value: skills.Advanced }]
           .filter(i => i.value > 0)
       );
 
+      // Language distribution
       const langCounts = {};
       data.forEach(s => {
         const langs = s.languagesUsed?.length ? s.languagesUsed : s.language ? [s.language] : [];
@@ -132,48 +135,129 @@ const UserDashboard = () => {
         Object.entries(langCounts).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([lang, count]) => ({ lang: lang.charAt(0).toUpperCase() + lang.slice(1), pct: Math.round((count / total) * 100) }))
       );
+
+      // Activity trend — sessions per day last 14 days
+      const dayMap = {};
+      const now = Date.now();
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(now - i * 86400000);
+        dayMap[d.toLocaleDateString(undefined, { month: "short", day: "numeric" })] = 0;
+      }
+      data.forEach(s => {
+        const ts = s.timestamp?.seconds || s.startTime?.seconds;
+        if (!ts) return;
+        const d = new Date(ts * 1000);
+        if (now - d.getTime() > 14 * 86400000) return;
+        const key = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+        if (key in dayMap) dayMap[key]++;
+      });
+      setActivityData(Object.entries(dayMap).map(([date, count]) => ({ date, sessions: count })));
     };
 
-    let unsubscribe;
+    let unsub;
     try {
       const q = query(collection(db, "sessions"), where("userId", "==", user.uid), orderBy("timestamp", "desc"));
-      unsubscribe = onSnapshot(q,
-        (snapshot) => processSessionData(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))),
+      unsub = onSnapshot(q,
+        snap => process(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
         async () => {
           try {
             const snap = await getDocs(query(collection(db, "sessions"), where("userId", "==", user.uid)));
             const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
               .sort((a, b) => (b.timestamp?.seconds || b.startTime?.seconds || 0) - (a.timestamp?.seconds || a.startTime?.seconds || 0));
-            processSessionData(data);
+            process(data);
           } catch (e) { console.error("Dashboard fallback failed:", e); }
         }
       );
     } catch (e) { console.error("Dashboard listener failed:", e); }
-
-    return () => { if (unsubscribe) unsubscribe(); };
+    return () => { if (unsub) unsub(); };
   }, [user]);
 
-  const COLORS = ["#94a3b8", "#3b82f6", "#10b981"];
+  // ── Derived values ──
   const level = profile ? Math.floor((profile.totalXP || 0) / 100) + 1 : null;
-  const levelProgress = profile ? ((profile.totalXP || 0) % 100) : 0;
+  const levelProgress = profile ? (profile.totalXP || 0) % 100 : 0;
+  const xpToNext = 100 - levelProgress;
+
+  // Authenticity trend: compare last 5 sessions vs overall
+  const authTrend = useMemo(() => {
+    const withAI = sessions.filter(s => s.stats?.aiProbability != null);
+    if (withAI.length < 5) return null;
+    const recent5Avg = withAI.slice(0, 5).reduce((a, s) => a + s.stats.aiProbability, 0) / 5;
+    const overallAvg = withAI.reduce((a, s) => a + s.stats.aiProbability, 0) / withAI.length;
+    // If recent AI score is lower → authenticity is improving
+    return recent5Avg < overallAvg - 3 ? "up" : recent5Avg > overallAvg + 3 ? "down" : "stable";
+  }, [sessions]);
+
+  // Next milestone
+  const nextMilestone = useMemo(() => {
+    if (!profile) return null;
+    const xp = profile.totalXP || 0;
+    const quests = profile.questsCompleted || 0;
+    const earnedIds = new Set((profile.badges || []).map(b => b.id));
+
+    if (!earnedIds.has("first_quest") && quests === 0) return { label: "Complete your first quest", icon: "🎯" };
+    if (!earnedIds.has("quests_5") && quests < 5)   return { label: `${5 - quests} more quest${5 - quests !== 1 ? "s" : ""} to earn 🔥 Getting Started`, icon: "🔥" };
+    if (!earnedIds.has("xp_100") && xp < 100)       return { label: `${100 - xp} XP to earn 💯 Century badge`, icon: "💯" };
+    if (!earnedIds.has("quests_10") && quests < 10) return { label: `${10 - quests} more quest${10 - quests !== 1 ? "s" : ""} to earn 🏹 Quest Hunter`, icon: "🏹" };
+    if (!earnedIds.has("xp_500") && xp < 500)       return { label: `${500 - xp} XP to earn ⚡ XP Legend badge`, icon: "⚡" };
+    if (!earnedIds.has("quests_25") && quests < 25) return { label: `${25 - quests} more quest${25 - quests !== 1 ? "s" : ""} to earn 👑 Quest Master`, icon: "👑" };
+    return null;
+  }, [profile]);
 
   return (
     <div className="space-y-8">
+
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-        <p className="text-slate-400 mt-2">Welcome back, {user?.email?.split("@")[0]}. Here's your performance overview.</p>
+        <p className="text-slate-400 mt-2">Welcome back, <span className="text-white font-medium">{user?.email?.split("@")[0]}</span>. Here's your performance overview.</p>
       </div>
+
+      {/* Next Milestone Banner */}
+      {nextMilestone && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          onClick={() => navigate("/user/quests")}
+          className="cursor-pointer flex items-center gap-4 bg-indigo-500/10 border border-indigo-500/30 hover:border-indigo-500/60 rounded-2xl px-5 py-4 transition-all group"
+        >
+          <span className="text-2xl">{nextMilestone.icon}</span>
+          <div className="flex-1">
+            <p className="text-xs text-indigo-400 uppercase tracking-wider font-semibold mb-0.5">Next Milestone</p>
+            <p className="text-white font-semibold">{nextMilestone.label}</p>
+          </div>
+          <ArrowRight size={18} className="text-indigo-400 opacity-0 group-hover:opacity-100 transition" />
+        </motion.div>
+      )}
 
       {/* Row 1 — Session stats */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-6">
-        <StatCard title="Total Sessions" value={stats.total}           icon={Code}        color="bg-blue-500"   delay={0.1} />
-        <StatCard title="Authenticity"   value={`${stats.accuracy}%`} icon={CheckCircle} color="bg-green-500"  delay={0.2} />
-        <StatCard title="Current Level"  value={stats.skill}           icon={TrendingUp}  color="bg-purple-500" delay={0.3} />
-        <StatCard title="Languages Used" value={langData.length || "—"} icon={Globe}      color="bg-cyan-500"   delay={0.35} />
+        <StatCard title="Total Sessions"  value={stats.total}            icon={Code}        color="bg-blue-500"   delay={0.1} sub="all time" />
+        <StatCard
+          title="Authenticity"
+          value={
+            <span className="flex items-center gap-2">
+              {stats.accuracy}%
+              {authTrend === "up"   && <TrendingUp   size={18} className="text-emerald-400" />}
+              {authTrend === "down" && <TrendingDown  size={18} className="text-rose-400" />}
+            </span>
+          }
+          icon={CheckCircle}
+          color="bg-green-500"
+          delay={0.2}
+          sub={authTrend === "up" ? "↑ improving recently" : authTrend === "down" ? "↓ declining recently" : "avg across all sessions"}
+        />
+        <StatCard
+          title="Skill Level"
+          value={stats.skill}
+          icon={TrendingUp}
+          color="bg-purple-500"
+          delay={0.3}
+          sub="AI-detected from sessions"
+        />
+        <StatCard title="Languages Used"  value={langData.length || "—"} icon={Globe}       color="bg-cyan-500"   delay={0.35} sub="detected so far" />
       </div>
 
-      {/* Row 2 — XP / Level / Rank / Streak */}
+      {/* Row 2 — Gamification */}
       {profile && (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-6">
           {/* XP + Level progress */}
@@ -185,10 +269,10 @@ const UserDashboard = () => {
           >
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Star size={20} className="text-yellow-400" fill="currentColor" />
-                <p className="text-slate-400 text-sm font-medium">Level {level}</p>
+                <Star size={18} className="text-yellow-400" fill="currentColor" />
+                <p className="text-white font-bold">Gamification Level {level}</p>
               </div>
-              <span className="text-yellow-400 font-bold text-lg">{profile.totalXP || 0} XP</span>
+              <span className="text-yellow-400 font-bold">{profile.totalXP || 0} XP total</span>
             </div>
             <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
               <motion.div
@@ -199,7 +283,7 @@ const UserDashboard = () => {
               />
             </div>
             <div className="flex justify-between text-xs text-slate-500 mt-2">
-              <span>{levelProgress} / 100 XP to Level {level + 1}</span>
+              <span>{xpToNext} XP to Level {level + 1}</span>
               <span>{profile.questsCompleted || 0} quests completed</span>
             </div>
           </motion.div>
@@ -211,6 +295,7 @@ const UserDashboard = () => {
             icon={Medal}
             color="bg-indigo-500"
             delay={0.45}
+            sub={rankTotal ? `out of ${rankTotal} students` : "complete quests to rank"}
             onClick={() => navigate("/user/leaderboard")}
           />
 
@@ -255,8 +340,43 @@ const UserDashboard = () => {
         </div>
       </motion.div>
 
-      {/* Recent Activity + Skill Breakdown */}
+      {/* Activity Trend Chart */}
+      {activityData.some(d => d.sessions > 0) && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.58 }}
+          className="bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl shadow-xl p-6"
+        >
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Activity size={20} className="text-indigo-400" /> Coding Activity
+            </h2>
+            <span className="text-xs text-slate-500">Last 14 days</span>
+          </div>
+          <div className="h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={activityData}>
+                <defs>
+                  <linearGradient id="actGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#6366f1" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} allowDecimals={false} tick={{ fontSize: 11 }} width={24} />
+                <Tooltip {...TOOLTIP_PROPS} formatter={(v) => [v, "Sessions"]} />
+                <Area type="monotone" dataKey="sessions" stroke="#6366f1" strokeWidth={2} fill="url(#actGrad)" dot={false} activeDot={{ r: 4, fill: "#6366f1" }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Recent Activity + Right column */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Recent Activity */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -274,56 +394,54 @@ const UserDashboard = () => {
             )}
           </div>
           <div className="divide-y divide-slate-700/50 max-h-[420px] overflow-y-auto">
-            {sessions.length > 0 ? (
-              sessions.slice(0, 15).map((session) => {
-                const aiProb = session.stats?.aiProbability;
-                const duration = session.activeDuration
-                  || (session.totalDuration ? session.totalDuration / 1000 : 0)
-                  || session.stats?.duration
-                  || (session.endTime?.seconds && session.startTime?.seconds ? session.endTime.seconds - session.startTime.seconds : 0);
-                const mins = duration > 0 ? Math.floor(duration / 60) : null;
-                return (
-                  <div
-                    key={session.id}
-                    onClick={() => navigate(`/user/session/${session.id}`)}
-                    className="p-4 hover:bg-slate-700/30 transition flex items-center justify-between cursor-pointer group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-200 capitalize truncate">
-                        {session.fileName?.replace(/\.\w+$/, "") || session.language || "Unknown"}
-                        <span className="text-slate-500 font-normal ml-1 text-sm">
-                          {session.sessionType === "extension" ? "· VS Code" : "· Quest"}
-                        </span>
-                      </p>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <p className="text-xs text-slate-500">
-                          {(session.timestamp || session.startTime)
-                            ? new Date((session.timestamp?.seconds || session.startTime?.seconds) * 1000).toLocaleString()
-                            : "Just now"}
-                        </p>
-                        {mins !== null && <span className="text-xs text-slate-600">{mins}m</span>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0 ml-4">
-                      {aiProb != null && (
-                        <span className={`text-xs font-bold tabular-nums ${getAIColor(aiProb)}`}>
-                          AI {aiProb.toFixed(0)}%
-                        </span>
-                      )}
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
-                        session.stats?.skillLevel === "Advanced"     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                        session.stats?.skillLevel === "Intermediate" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
-                        session.stats?.skillLevel               ? "bg-slate-500/10 text-slate-400 border-slate-500/20" :
-                        "bg-slate-700/40 text-slate-600 border-slate-700"
-                      }`}>
-                        {session.stats?.skillLevel || "N/A"}
+            {sessions.length > 0 ? sessions.slice(0, 15).map((session) => {
+              const aiProb = session.stats?.aiProbability;
+              const duration = session.activeDuration
+                || (session.totalDuration ? session.totalDuration / 1000 : 0)
+                || session.stats?.duration
+                || (session.endTime?.seconds && session.startTime?.seconds ? session.endTime.seconds - session.startTime.seconds : 0);
+              const mins = duration > 0 ? Math.floor(duration / 60) : null;
+              return (
+                <div
+                  key={session.id}
+                  onClick={() => navigate(`/user/session/${session.id}`)}
+                  className="p-4 hover:bg-slate-700/30 transition flex items-center justify-between cursor-pointer group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-slate-200 capitalize truncate">
+                      {session.fileName?.replace(/\.\w+$/, "") || session.language || "Unknown"}
+                      <span className="text-slate-500 font-normal ml-1 text-sm">
+                        {session.sessionType === "extension" ? "· VS Code" : "· Quest"}
                       </span>
-                      <ArrowRight size={14} className="text-slate-600 group-hover:text-indigo-400 transition-colors" />
+                    </p>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <p className="text-xs text-slate-500">
+                        {(session.timestamp || session.startTime)
+                          ? new Date((session.timestamp?.seconds || session.startTime?.seconds) * 1000).toLocaleString()
+                          : "Just now"}
+                      </p>
+                      {mins !== null && <span className="text-xs text-slate-600">{mins}m</span>}
                     </div>
                   </div>
-                );
-              })
-            ) : (
+                  <div className="flex items-center gap-3 shrink-0 ml-4">
+                    {aiProb != null && (
+                      <span className={`text-xs font-bold tabular-nums ${getAIColor(aiProb)}`}>
+                        AI {aiProb.toFixed(0)}%
+                      </span>
+                    )}
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                      session.stats?.skillLevel === "Advanced"     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                      session.stats?.skillLevel === "Intermediate" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                      session.stats?.skillLevel                    ? "bg-slate-500/10 text-slate-400 border-slate-500/20" :
+                                                                     "bg-slate-700/40 text-slate-600 border-slate-700"
+                    }`}>
+                      {session.stats?.skillLevel || "N/A"}
+                    </span>
+                    <ArrowRight size={14} className="text-slate-600 group-hover:text-indigo-400 transition-colors" />
+                  </div>
+                </div>
+              );
+            }) : (
               <div className="p-12 text-center">
                 <Code size={48} className="mx-auto text-slate-600 mb-4" />
                 <h3 className="text-lg font-semibold text-slate-400 mb-2">No activity yet</h3>
@@ -339,6 +457,7 @@ const UserDashboard = () => {
           </div>
         </motion.div>
 
+        {/* Right column */}
         <div className="space-y-6">
           {/* Skill Breakdown */}
           <motion.div
@@ -347,24 +466,25 @@ const UserDashboard = () => {
             transition={{ delay: 0.65 }}
             className="bg-slate-800/50 backdrop-blur-md border border-slate-700 rounded-2xl shadow-xl p-6"
           >
-            <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-              <PieIcon size={20} className="text-purple-400" /> Skill Breakdown
+            <h2 className="text-base font-bold text-white flex items-center gap-2 mb-4">
+              <PieIcon size={18} className="text-purple-400" /> Skill Breakdown
+              <span className="text-xs text-slate-500 font-normal ml-1">(AI-detected)</span>
             </h2>
             {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
-                  <Pie data={chartData} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={5} dataKey="value">
-                    {chartData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+                  <Pie data={chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={5} dataKey="value">
+                    {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#fff" }} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#fff" }} />
-                  <Legend verticalAlign="bottom" height={36} wrapperStyle={{ color: "#94a3b8", fontSize: 12 }} />
+                  <Tooltip {...TOOLTIP_PROPS} />
+                  <Legend verticalAlign="bottom" height={32} wrapperStyle={{ color: "#94a3b8", fontSize: 12 }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-[220px] flex items-center justify-center">
+              <div className="h-[200px] flex items-center justify-center">
                 <div className="text-center">
-                  <TrendingUp size={36} className="mx-auto text-slate-600 mb-3" />
-                  <p className="text-slate-500 text-sm">Complete quests to see your skill distribution</p>
+                  <TrendingUp size={32} className="mx-auto text-slate-600 mb-2" />
+                  <p className="text-slate-500 text-xs">Complete quests to see your skill distribution</p>
                 </div>
               </div>
             )}
@@ -401,9 +521,20 @@ const UserDashboard = () => {
                 )}
               </div>
             ) : (
-              <div className="text-center py-3">
+              <div className="text-center py-2">
                 <Trophy size={28} className="mx-auto text-slate-600 mb-2" />
                 <p className="text-slate-500 text-xs">Complete quests to earn badges</p>
+                {profile && (
+                  <div className="mt-3 space-y-1">
+                    {BADGE_DEFS.filter(b => b.check(profile)).length === 0 && (
+                      <p className="text-indigo-400 text-xs font-medium">
+                        {profile.questsCompleted > 0
+                          ? `${profile.questsCompleted} quest${profile.questsCompleted !== 1 ? "s" : ""} done — keep going!`
+                          : "Start your first quest!"}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </motion.div>
