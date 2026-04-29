@@ -71,10 +71,11 @@ const Leaderboard = () => {
     try {
       // Fetch all profiles, all sessions, and all users in parallel
       const [profilesSnap, sessionsSnap, usersSnap] = await Promise.all([
-        getDocs(collection(db, "userProfiles")),
-        getDocs(collection(db, "sessions")),
-        getDocs(collection(db, "users")),
+        getDocs(collection(db, "userProfiles")).catch(e => { console.error("userProfiles fetch failed:", e.code); return { docs: [] }; }),
+        getDocs(collection(db, "sessions")).catch(e => { console.error("sessions fetch failed:", e.code); return { docs: [] }; }),
+        getDocs(collection(db, "users")).catch(e => { console.error("users fetch failed:", e.code); return { docs: [] }; }),
       ]);
+      console.log("Leaderboard fetched — profiles:", profilesSnap.docs.length, "sessions:", sessionsSnap.docs.length, "users:", usersSnap.docs.length);
 
       // Build user info map from users collection (email, name)
       const userInfoMap = {};
@@ -160,7 +161,7 @@ const Leaderboard = () => {
         setUpdating(false);
       }
     } catch (e) {
-      console.error("Leaderboard load failed:", e);
+      console.error("Leaderboard load failed:", e.code, e.message);
     } finally {
       setLoading(false);
     }
