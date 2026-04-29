@@ -1,9 +1,32 @@
 import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../firebase/config";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 import { motion } from "framer-motion";
-import { Trophy, Shield, Zap, Medal, Crown, Star } from "lucide-react";
+import { Trophy, Shield, Zap, Medal, Crown, Star, RefreshCw } from "lucide-react";
+
+const EMA_ALPHA = 0.25; // weight of each new session (recent = more impact)
+
+// Compute EMA authenticity from sessions sorted oldest → newest
+const computeEMA = (sessions) => {
+  const sorted = [...sessions]
+    .filter(s => s.stats?.aiProbability != null)
+    .sort((a, b) => {
+      const tA = a.timestamp?.seconds || a.startTime?.seconds || 0;
+      const tB = b.timestamp?.seconds || b.startTime?.seconds || 0;
+      return tA - tB;
+    });
+
+  if (sorted.length === 0) return null;
+
+  // Start with first session's AI score
+  let ema = sorted[0].stats.aiProbability;
+  for (let i = 1; i < sorted.length; i++) {
+    const score = sorted[i].stats.aiProbability;
+    ema = ema * (1 - EMA_ALPHA) + score * EMA_ALPHA;
+  }
+  return parseFloat(ema.toFixed(2));
+};
 
 const getRankIcon = (rank) => {
   if (rank === 1) return <Crown size={20} className="text-yellow-400" fill="currentColor" />;
@@ -39,53 +62,104 @@ const SkillBadge = ({ level }) => {
 
 const Leaderboard = () => {
   const { user } = useAuth();
-  const [profiles, setProfiles] = useState([]);
+  const [ranked, setRanked] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
 
-  useEffect(() => {
-    const fetch_ = async () => {
-      try {
-        const snap = await getDocs(collection(db, "userProfiles"));
-        setProfiles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      } catch (e) {
-        console.error("Leaderboard fetch failed:", e);
-      } finally {
-        setLoading(false);
+  const loadLeaderboard = async () => {
+    setLoading(true);
+    try {
+      // Fetch all profiles and all sessions in parallel
+      const [profilesSnap, sessionsSnap] = await Promise.all([
+        getDocs(collection(db, "userProfiles")),
+        getDocs(collection(db, "sessions")),
+      ]);
+
+      // Group sessions by userId
+      const sessionsByUser = {};
+      sessionsSnap.docs.forEach(d => {
+        const s = d.data();
+        const uid = s.userId;
+        if (!uid) return;
+        if (!sessionsByUser[uid]) sessionsByUser[uid] = [];
+        sessionsByUser[uid].push(s);
+      });
+
+      // Build ranked list
+      const rows = [];
+      const updates = []; // collect Firestore updates for existing users
+
+      profilesSnap.docs.forEach(d => {
+        const p = { id: d.id, ...d.data() };
+        const uid = p.userId || p.id;
+        const userSessions = sessionsByUser[uid] || [];
+
+        // Compute fresh EMA from all sessions
+        const emaAI = computeEMA(userSessions);
+        const avgAIScore = emaAI ?? p.avgAIScore ?? 0;
+        const authenticity = parseFloat((100 - avgAIScore).toFixed(1));
+
+        // Most recent skill level from sessions
+        const withSkill = [...userSessions]
+          .filter(s => s.stats?.skillLevel)
+          .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+        const skillLevel = withSkill[0]?.stats?.skillLevel || p.skillLevel || "Beginner";
+
+        const combinedScore = parseFloat(((p.totalXP || 0) * (authenticity / 100)).toFixed(1));
+
+        rows.push({ ...p, uid, avgAIScore, authenticity, skillLevel, combinedScore, sessionCount: userSessions.length });
+
+        // Queue update if EMA changed meaningfully from stored value
+        if (emaAI !== null && Math.abs(avgAIScore - (p.avgAIScore ?? -1)) > 0.01) {
+          updates.push({ ref: doc(db, "userProfiles", d.id), avgAIScore, skillLevel });
+        }
+      });
+
+      // Sort by combined score descending
+      rows.sort((a, b) => b.combinedScore - a.combinedScore);
+      setRanked(rows.map((r, i) => ({ ...r, rank: i + 1 })));
+
+      // Write updated avgAIScore back to Firestore for all users (background)
+      if (updates.length > 0) {
+        setUpdating(true);
+        await Promise.all(updates.map(u => updateDoc(u.ref, { avgAIScore: u.avgAIScore, skillLevel: u.skillLevel })));
+        setUpdating(false);
       }
-    };
-    fetch_();
-  }, []);
+    } catch (e) {
+      console.error("Leaderboard load failed:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const ranked = useMemo(() => {
-    return profiles
-      .map(p => {
-        const authenticity = 100 - (p.avgAIScore ?? 0);
-        // Combined score: XP weighted by authenticity factor
-        const combinedScore = (p.totalXP || 0) * (authenticity / 100);
-        return { ...p, authenticity, combinedScore };
-      })
-      .sort((a, b) => b.combinedScore - a.combinedScore)
-      .map((p, i) => ({ ...p, rank: i + 1 }));
-  }, [profiles]);
+  useEffect(() => { loadLeaderboard(); }, []);
 
-  const myRank = ranked.find(p => p.userId === user?.uid || p.id === user?.uid);
-  const myIndex = myRank ? myRank.rank : null;
+  const myRank = useMemo(() => ranked.find(p => p.uid === user?.uid || p.id === user?.uid), [ranked, user]);
 
   const getDisplayName = (p) => {
-    const email = p.email || "";
-    const name = p.name || email.split("@")[0] || "Anonymous";
-    return name.length > 20 ? name.slice(0, 20) + "…" : name;
+    const name = p.name || p.email?.split("@")[0] || "Anonymous";
+    return name.length > 22 ? name.slice(0, 22) + "…" : name;
   };
 
   return (
     <div className="space-y-8 pb-12">
-      <div>
-        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-          <Trophy className="text-yellow-400" size={32} /> Leaderboard
-        </h1>
-        <p className="text-slate-400 mt-2 text-sm">
-          Ranked by XP × Authenticity — the more you code yourself, the higher you climb.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+            <Trophy className="text-yellow-400" size={32} /> Leaderboard
+          </h1>
+          <p className="text-slate-400 mt-2 text-sm">
+            Ranked by XP × Authenticity — scores update from all sessions (quests + VS Code).
+          </p>
+        </div>
+        <button
+          onClick={loadLeaderboard}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 bg-slate-800 border border-slate-700 hover:border-indigo-500/50 text-slate-300 hover:text-white rounded-xl text-sm transition-all"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          Refresh
+        </button>
       </div>
 
       {/* Your rank card */}
@@ -95,12 +169,13 @@ const Leaderboard = () => {
           animate={{ opacity: 1, y: 0 }}
           className="bg-indigo-600/20 border border-indigo-500/40 rounded-2xl p-5 flex items-center gap-6"
         >
-          <div className="text-center min-w-[48px]">
+          <div className="flex items-center justify-center min-w-[40px]">
             {getRankIcon(myRank.rank)}
           </div>
           <div className="flex-1">
             <p className="text-xs text-indigo-300 uppercase tracking-wider mb-0.5">Your Position</p>
             <p className="text-white font-bold text-lg">{getDisplayName(myRank)}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{myRank.sessionCount} sessions tracked</p>
           </div>
           <div className="flex gap-6 text-center">
             <div>
@@ -109,27 +184,32 @@ const Leaderboard = () => {
             </div>
             <div>
               <p className="text-xs text-slate-400">Authenticity</p>
-              <p className={`font-bold ${getAuthColor(myRank.authenticity)}`}>{myRank.authenticity.toFixed(0)}%</p>
+              <p className={`font-bold ${getAuthColor(myRank.authenticity)}`}>{myRank.authenticity}%</p>
             </div>
             <div>
               <p className="text-xs text-slate-400">Score</p>
-              <p className="text-indigo-300 font-bold">{myRank.combinedScore.toFixed(0)}</p>
+              <p className="text-indigo-300 font-bold">{myRank.combinedScore}</p>
             </div>
           </div>
         </motion.div>
       )}
 
       {/* Score formula explanation */}
-      <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+      <div className="flex flex-wrap gap-3 text-xs text-slate-500">
         <div className="flex items-center gap-2 bg-slate-800/40 border border-slate-700 px-3 py-2 rounded-lg">
           <Zap size={13} className="text-yellow-400" /> XP from completed quests
         </div>
         <div className="flex items-center gap-2 bg-slate-800/40 border border-slate-700 px-3 py-2 rounded-lg">
-          <Shield size={13} className="text-emerald-400" /> Authenticity = 100% − avg AI score
+          <Shield size={13} className="text-emerald-400" /> Authenticity via weighted recent sessions (EMA)
         </div>
         <div className="flex items-center gap-2 bg-slate-800/40 border border-slate-700 px-3 py-2 rounded-lg">
-          <Star size={13} className="text-indigo-400" /> Final score = XP × (Authenticity / 100)
+          <Star size={13} className="text-indigo-400" /> Score = XP × (Authenticity / 100)
         </div>
+        {updating && (
+          <div className="flex items-center gap-2 bg-slate-800/40 border border-indigo-500/30 px-3 py-2 rounded-lg text-indigo-400">
+            <RefreshCw size={13} className="animate-spin" /> Syncing scores...
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -148,6 +228,7 @@ const Leaderboard = () => {
                 <th className="p-4">Skill</th>
                 <th className="p-4 text-right">XP</th>
                 <th className="p-4 text-right">Authenticity</th>
+                <th className="p-4 text-right">Sessions</th>
                 <th className="p-4 text-right">Quests</th>
                 <th className="p-4 text-right">Badges</th>
                 <th className="p-4 text-right pr-6">Score</th>
@@ -156,15 +237,22 @@ const Leaderboard = () => {
             <tbody className="divide-y divide-slate-700/50">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="p-10 text-center text-slate-500">Loading leaderboard...</td>
+                  <td colSpan={9} className="p-10 text-center text-slate-500">
+                    <div className="flex items-center justify-center gap-3">
+                      <RefreshCw size={18} className="animate-spin text-indigo-400" />
+                      Computing scores from all sessions...
+                    </div>
+                  </td>
                 </tr>
               ) : ranked.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-10 text-center text-slate-500">No data yet — complete quests to appear here!</td>
+                  <td colSpan={9} className="p-10 text-center text-slate-500">
+                    No data yet — complete quests to appear here!
+                  </td>
                 </tr>
               ) : (
                 ranked.map((p, i) => {
-                  const isMe = p.userId === user?.uid || p.id === user?.uid;
+                  const isMe = p.uid === user?.uid || p.id === user?.uid;
                   return (
                     <motion.tr
                       key={p.id}
@@ -188,6 +276,7 @@ const Leaderboard = () => {
                               {getDisplayName(p)}
                               {isMe && <span className="ml-2 text-xs text-indigo-400 font-normal">(you)</span>}
                             </p>
+                            <p className="text-xs text-slate-600">{p.sessionCount} sessions</p>
                           </div>
                         </div>
                       </td>
@@ -199,8 +288,11 @@ const Leaderboard = () => {
                       </td>
                       <td className="p-4 text-right tabular-nums">
                         <span className={`px-2 py-1 rounded-full text-xs font-bold border ${getAuthBg(p.authenticity)} ${getAuthColor(p.authenticity)}`}>
-                          {p.authenticity.toFixed(0)}%
+                          {p.authenticity}%
                         </span>
+                      </td>
+                      <td className="p-4 text-right text-slate-300 tabular-nums">
+                        {p.sessionCount}
                       </td>
                       <td className="p-4 text-right text-slate-300 tabular-nums">
                         {p.questsCompleted || 0}
@@ -209,7 +301,7 @@ const Leaderboard = () => {
                         {(p.badges || []).length}
                       </td>
                       <td className="p-4 pr-6 text-right font-bold text-indigo-300 tabular-nums">
-                        {p.combinedScore.toFixed(0)}
+                        {p.combinedScore}
                       </td>
                     </motion.tr>
                   );
